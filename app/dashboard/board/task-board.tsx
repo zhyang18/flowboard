@@ -1,0 +1,498 @@
+"use client";
+
+import {
+  CalendarClock,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  Clock3,
+  Edit3,
+  GripVertical,
+  Plus,
+  Search,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
+import type { TaskPriority, TaskStatus } from "@/db/schema";
+import {
+  taskPriorityLabels,
+  taskStatusLabels,
+  taskStatuses,
+} from "@/lib/workspace";
+
+type BoardTask = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectCode: string;
+  projectColor: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  estimateHours: number;
+  actualHours: number;
+  sortOrder: number;
+  dueDate: string | null;
+  completedAt: string | null;
+};
+
+type ProjectOption = { id: string; name: string; code: string; color: string };
+type AssigneeOption = { id: string; name: string };
+
+type TaskForm = {
+  projectId: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assigneeId: string;
+  estimateHours: number;
+  actualHours: number;
+  dueDate: string;
+};
+
+const emptyForm: TaskForm = {
+  projectId: "",
+  title: "",
+  description: "",
+  status: "todo",
+  priority: "medium",
+  assigneeId: "",
+  estimateHours: 4,
+  actualHours: 0,
+  dueDate: "",
+};
+const boardReferenceTime = Date.now();
+
+function dateInput(value: string | null) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function dateLabel(value: string | null) {
+  if (!value) return "未排期";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
+
+function completedLabel(value: string | null) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+export default function TaskBoard() {
+  const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropStatus, setDropStatus] = useState<TaskStatus | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<TaskForm>(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const loadTasks = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    if (assigneeId) params.set("assigneeId", assigneeId);
+    if (query.trim()) params.set("query", query.trim());
+    try {
+      const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
+      const result = (await response.json()) as {
+        data?: BoardTask[];
+        projects?: ProjectOption[];
+        assignees?: AssigneeOption[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? "任务加载失败。");
+      setTasks(result.data ?? []);
+      setProjects(result.projects ?? []);
+      setAssignees(result.assignees ?? []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "任务加载失败。");
+    } finally {
+      setLoading(false);
+    }
+  }, [assigneeId, projectId, query]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
+    return () => window.clearTimeout(timer);
+  }, [loadTasks, query]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const metrics = useMemo(() => {
+    const estimate = tasks.reduce((sum, task) => sum + task.estimateHours, 0);
+    const actual = tasks.reduce((sum, task) => sum + task.actualHours, 0);
+    const overdue = tasks.filter(
+      (task) =>
+        task.status !== "done" &&
+        task.dueDate &&
+        new Date(task.dueDate).getTime() < boardReferenceTime,
+    ).length;
+    return { estimate, actual, overdue };
+  }, [tasks]);
+
+  function openCreate(status: TaskStatus = "todo") {
+    setEditingId(null);
+    setForm({
+      ...emptyForm,
+      status,
+      projectId: projectId || projects[0]?.id || "",
+      assigneeId: assigneeId || "",
+    });
+    setModalOpen(true);
+  }
+
+  function openEdit(task: BoardTask) {
+    setEditingId(task.id);
+    setForm({
+      projectId: task.projectId,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      assigneeId: task.assigneeId ?? "",
+      estimateHours: task.estimateHours,
+      actualHours: task.actualHours,
+      dueDate: dateInput(task.dueDate),
+    });
+    setModalOpen(true);
+  }
+
+  async function saveTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(editingId ? `/api/tasks/${editingId}` : "/api/tasks", {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "任务保存失败。");
+      setModalOpen(false);
+      setNotice(editingId ? "任务已更新" : "任务已创建");
+      await loadTasks();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "任务保存失败。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateStatus(taskId: string, status: TaskStatus) {
+    const previous = tasks;
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              status,
+              completedAt:
+                status === "done"
+                  ? task.completedAt ?? new Date().toISOString()
+                  : null,
+            }
+          : task,
+      ),
+    );
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "状态更新失败。");
+      setNotice(`任务已移至“${taskStatusLabels[status]}”`);
+    } catch (updateError) {
+      setTasks(previous);
+      setError(
+        updateError instanceof Error ? updateError.message : "状态更新失败。",
+      );
+    }
+  }
+
+  function onDrop(event: DragEvent<HTMLElement>, status: TaskStatus) {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/task-id") || draggedId;
+    setDraggedId(null);
+    setDropStatus(null);
+    const task = tasks.find((item) => item.id === taskId);
+    if (task && task.status !== status) void updateStatus(task.id, status);
+  }
+
+  async function deleteTask(task: BoardTask) {
+    if (!window.confirm(`确定删除任务“${task.title}”吗？`)) return;
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "删除失败。");
+      setNotice("任务已删除");
+      await loadTasks();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "删除失败。");
+    }
+  }
+
+  return (
+    <div className="module-page board-page">
+      <section className="module-heading board-heading">
+        <div>
+          <span className="eyebrow">任务执行中心</span>
+          <h2>从需求进入到按时完成</h2>
+          <p>拖动任务完成流转，持续核对预估工时、实际投入与完成时间。</p>
+        </div>
+        <button className="primary-action module-primary" type="button" onClick={() => openCreate()}>
+          <Plus size={16} /> 新建任务
+        </button>
+      </section>
+
+      <section className="board-summary">
+        <div><small>任务总数</small><b>{tasks.length}</b></div>
+        <div><small>预估工时</small><b>{metrics.estimate.toFixed(1)}h</b></div>
+        <div><small>实际投入</small><b>{metrics.actual.toFixed(1)}h</b></div>
+        <div className={metrics.overdue ? "risk" : ""}><small>已逾期</small><b>{metrics.overdue}</b></div>
+      </section>
+
+      <section className="module-toolbar board-toolbar">
+        <label className="module-search">
+          <Search size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务标题或描述" />
+        </label>
+        <label className="module-select">
+          <span className="select-color" style={{ background: projects.find((project) => project.id === projectId)?.color ?? "#9aa6b2" }} />
+          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">全部项目</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+          </select>
+          <ChevronDown size={14} />
+        </label>
+        <label className="module-select">
+          <UserRound size={14} />
+          <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+            <option value="">全部负责人</option>
+            {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+          </select>
+          <ChevronDown size={14} />
+        </label>
+      </section>
+
+      {error && <div className="module-alert">{error}</div>}
+
+      {loading ? (
+        <div className="module-loading">正在加载任务看板…</div>
+      ) : (
+        <section className="kanban-scroll" aria-label="任务看板">
+          <div className="kanban-board">
+            {taskStatuses.map((status) => {
+              const columnTasks = tasks.filter((task) => task.status === status);
+              const columnEstimate = columnTasks.reduce((sum, task) => sum + task.estimateHours, 0);
+              return (
+                <section
+                  className={`kanban-column column-${status} ${dropStatus === status ? "drop-target" : ""}`}
+                  key={status}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDropStatus(status);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                      setDropStatus(null);
+                    }
+                  }}
+                  onDrop={(event) => onDrop(event, status)}
+                >
+                  <header className="kanban-column-header">
+                    <div>
+                      <i />
+                      <b>{taskStatusLabels[status]}</b>
+                      <span>{columnTasks.length}</span>
+                    </div>
+                    <small>{columnEstimate.toFixed(1)}h</small>
+                  </header>
+                  <div className="kanban-task-list">
+                    {columnTasks.map((task) => {
+                      const remaining = task.estimateHours - task.actualHours;
+                      const overrun = task.estimateHours > 0 && remaining < 0;
+                      const overdue =
+                        task.status !== "done" &&
+                        task.dueDate &&
+                        new Date(task.dueDate).getTime() < boardReferenceTime;
+                      return (
+                        <article
+                          className={`kanban-task ${draggedId === task.id ? "dragging" : ""}`}
+                          key={task.id}
+                          draggable
+                          onDragStart={(event) => {
+                            setDraggedId(task.id);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/task-id", task.id);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedId(null);
+                            setDropStatus(null);
+                          }}
+                        >
+                          <header>
+                            <span className={`task-priority priority-${task.priority}`}>
+                              {taskPriorityLabels[task.priority]}
+                            </span>
+                            <div className="task-card-actions">
+                              <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>
+                              <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>
+                              <GripVertical size={14} />
+                            </div>
+                          </header>
+                          <small className="task-project">
+                            <i style={{ background: task.projectColor }} /> {task.projectCode}
+                          </small>
+                          <h3>{task.title}</h3>
+                          {task.description && <p>{task.description}</p>}
+                          <div className="task-time-grid">
+                            <span><small>预估</small><b>{task.estimateHours.toFixed(1)}h</b></span>
+                            <span><small>实际</small><b>{task.actualHours.toFixed(1)}h</b></span>
+                            <span className={overrun ? "risk" : ""}>
+                              <small>{overrun ? "已超出" : "剩余"}</small>
+                              <b>{Math.abs(remaining).toFixed(1)}h</b>
+                            </span>
+                          </div>
+                          <footer>
+                            <span className={overdue ? "risk" : ""}>
+                              {overdue ? <CircleAlert size={13} /> : <CalendarClock size={13} />}
+                              {dateLabel(task.dueDate)}
+                            </span>
+                            <span className="task-assignee" title={task.assigneeName ?? "待认领"}>
+                              {task.assigneeName?.slice(0, 1) ?? "?"}
+                            </span>
+                          </footer>
+                          {task.completedAt && (
+                            <div className="completed-time">
+                              <CheckCircle2 size={12} /> 完成于 {completedLabel(task.completedAt)}
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                    <button className="add-column-task" type="button" onClick={() => openCreate(status)}>
+                      <Plus size={14} /> 添加任务
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {modalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="workspace-modal task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+            <header>
+              <div>
+                <span className="eyebrow">{editingId ? "编辑任务" : "新任务"}</span>
+                <h2 id="task-modal-title">{editingId ? "更新任务与工时" : "创建一项可交付任务"}</h2>
+              </div>
+              <button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button>
+            </header>
+            <form onSubmit={saveTask}>
+              <div className="workspace-form-grid">
+                <label className="form-wide">
+                  <span>任务标题</span>
+                  <input required maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="清晰描述需要完成的结果" />
+                </label>
+                <label>
+                  <span>所属项目</span>
+                  <select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>
+                    <option value="">请选择</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>负责人</span>
+                  <select value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
+                    <option value="">待认领</option>
+                    {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>任务状态</span>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}>
+                    {taskStatuses.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>优先级</span>
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
+                    {Object.entries(taskPriorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>预估工时（小时）</span>
+                  <input type="number" min="0" step="0.5" value={form.estimateHours} onChange={(e) => setForm({ ...form, estimateHours: Number(e.target.value) })} />
+                </label>
+                <label>
+                  <span>实际工时（小时）</span>
+                  <input type="number" min="0" step="0.5" value={form.actualHours} onChange={(e) => setForm({ ...form, actualHours: Number(e.target.value) })} />
+                </label>
+                <label>
+                  <span>截止日期</span>
+                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                </label>
+                <label className="form-wide">
+                  <span>任务说明</span>
+                  <textarea maxLength={1500} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="补充验收标准、背景或注意事项。" />
+                </label>
+              </div>
+              <div className="time-form-hint">
+                <Clock3 size={15} />
+                <span>系统会持续显示预估、实际与剩余工时；任务进入“已完成”后自动记录实际完成时间。</span>
+              </div>
+              <footer>
+                <button type="button" onClick={() => setModalOpen(false)}>取消</button>
+                <button className="primary-action" type="submit" disabled={saving}>
+                  {saving ? "保存中…" : editingId ? "保存修改" : "创建任务"}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
+    </div>
+  );
+}
