@@ -1,11 +1,15 @@
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { auditLogs, tasks, workLogs } from "@/db/schema";
+import { auditLogs, sprints, tasks, workLogs } from "@/db/schema";
 import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import {
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
 
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
@@ -31,9 +35,11 @@ export async function DELETE(request: Request, context: RouteContext) {
       userId: workLogs.userId,
       durationHours: workLogs.durationHours,
       projectId: tasks.projectId,
+      sprintStatus: sprints.status,
     })
     .from(workLogs)
     .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
+    .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
     .where(eq(workLogs.id, id))
     .limit(1);
   if (!existing) return apiError("工时记录不存在。", 404);
@@ -42,28 +48,80 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (existing.userId !== currentUser.id && !canManageProject(currentUser, access)) {
     return apiError("无权删除该工时记录。", 403);
   }
+  if (isCompletedSprintStatus(existing.sprintStatus)) {
+    return apiError("已完成迭代为历史快照，请先重新打开后再删除工时。", 409);
+  }
 
-  await db.transaction(async (tx) => {
-    await tx.delete(workLogs).where(eq(workLogs.id, id));
-    await tx
-      .update(tasks)
-      .set({
-        actualHours: sql`greatest(0, ${tasks.actualHours} - ${existing.durationHours})`,
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, existing.taskId));
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "work_log.delete",
-      entityType: "work_log",
-      entityId: id,
-      metadata: {
-        taskId: existing.taskId,
-        userId: existing.userId,
-        durationHours: existing.durationHours,
-      },
+  try {
+    await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([existing.projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedExisting] = await tx
+        .select({
+          id: workLogs.id,
+          taskId: workLogs.taskId,
+          userId: workLogs.userId,
+          durationHours: workLogs.durationHours,
+          projectId: tasks.projectId,
+          sprintStatus: sprints.status,
+        })
+        .from(workLogs)
+        .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
+        .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+        .where(eq(workLogs.id, id))
+        .limit(1);
+      if (!lockedExisting) throw new Error("WORK_LOG_NOT_FOUND");
+      if (
+        lockedExisting.projectId !== existing.projectId ||
+        lockedExisting.taskId !== existing.taskId
+      ) {
+        throw new Error("WORK_LOG_CHANGED");
+      }
+      if (isCompletedSprintStatus(lockedExisting.sprintStatus)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
+      const [deleted] = await tx
+        .delete(workLogs)
+        .where(eq(workLogs.id, id))
+        .returning({
+          id: workLogs.id,
+          taskId: workLogs.taskId,
+          userId: workLogs.userId,
+          durationHours: workLogs.durationHours,
+        });
+      if (!deleted) throw new Error("WORK_LOG_NOT_FOUND");
+      await tx
+        .update(tasks)
+        .set({
+          actualHours: sql`greatest(0, ${tasks.actualHours} - ${deleted.durationHours})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, deleted.taskId));
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "work_log.delete",
+        entityType: "work_log",
+        entityId: deleted.id,
+        metadata: {
+          taskId: deleted.taskId,
+          userId: deleted.userId,
+          durationHours: deleted.durationHours,
+        },
+      });
     });
-  });
 
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "WORK_LOG_NOT_FOUND") {
+      return apiError("工时记录不存在或已被删除。", 404);
+    }
+    if (error instanceof Error && error.message === "WORK_LOG_CHANGED") {
+      return apiError("工时记录关联已变化，请刷新后重试。", 409);
+    }
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再删除工时。", 409);
+    }
+    throw error;
+  }
 }

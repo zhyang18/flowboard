@@ -6,7 +6,11 @@ import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
-import { hasOtherActiveSprint } from "@/lib/sprints";
+import {
+  hasOtherActiveSprint,
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
 import {
   isSprintStatus,
   parseDate,
@@ -69,12 +73,32 @@ export async function PATCH(request: Request, context: RouteContext) {
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
   if (!name) return apiError("迭代名称不能为空。");
   const status = isSprintStatus(body.status) ? body.status : existing.status;
-  if (existing.status === "completed" && status === "completed") {
-    return apiError("已完成迭代为历史快照，请先重新打开后再修改。", 409);
+  if (isCompletedSprintStatus(existing.status)) {
+    const changesSnapshot = Object.keys(body).some((field) => field !== "status");
+    if (status === "completed" || changesSnapshot) {
+      return apiError("已完成迭代为历史快照，请先单独重新打开后再修改。", 409);
+    }
   }
 
   try {
     const updated = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([existing.projectId, projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedExisting] = await tx
+        .select({ status: sprints.status, updatedAt: sprints.updatedAt })
+        .from(sprints)
+        .where(eq(sprints.id, id))
+        .limit(1);
+      if (
+        !lockedExisting ||
+        lockedExisting.updatedAt.getTime() !== existing.updatedAt.getTime()
+      ) {
+        throw new Error("SPRINT_CHANGED");
+      }
+      if (!isCompletedSprintStatus(existing.status) && isCompletedSprintStatus(lockedExisting.status)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
       if (status === "active") {
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtext(${`active-sprint:${projectId}`}))`,
@@ -117,6 +141,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error instanceof Error && error.message === "ACTIVE_SPRINT_EXISTS") {
       return apiError("同一项目只能有一个进行中的迭代。", 409);
     }
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再修改。", 409);
+    }
+    if (error instanceof Error && error.message === "SPRINT_CHANGED") {
+      return apiError("迭代已被其他操作更新，请刷新后重试。", 409);
+    }
     if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);
     throw error;
   }
@@ -144,15 +174,44 @@ export async function DELETE(request: Request, context: RouteContext) {
     return apiError("只有尚未开始的迭代可以删除；进行中或已完成迭代需保留历史。", 409);
   }
 
-  await db.transaction(async (tx) => {
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "sprint.delete",
-      entityType: "sprint",
-      entityId: id,
-      metadata: { name: existing.name },
+  try {
+    await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([existing.projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedExisting] = await tx
+        .select({ status: sprints.status, updatedAt: sprints.updatedAt })
+        .from(sprints)
+        .where(eq(sprints.id, id))
+        .limit(1);
+      if (
+        !lockedExisting ||
+        lockedExisting.updatedAt.getTime() !== existing.updatedAt.getTime()
+      ) {
+        throw new Error("SPRINT_CHANGED");
+      }
+      if (lockedExisting.status !== "planned") throw new Error("SPRINT_NOT_PLANNED");
+      const [deleted] = await tx
+        .delete(sprints)
+        .where(eq(sprints.id, id))
+        .returning({ id: sprints.id });
+      if (!deleted) throw new Error("SPRINT_CHANGED");
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "sprint.delete",
+        entityType: "sprint",
+        entityId: id,
+        metadata: { name: existing.name },
+      });
     });
-    await tx.delete(sprints).where(eq(sprints.id, id));
-  });
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "SPRINT_NOT_PLANNED") {
+      return apiError("只有尚未开始的迭代可以删除；进行中或已完成迭代需保留历史。", 409);
+    }
+    if (error instanceof Error && error.message === "SPRINT_CHANGED") {
+      return apiError("迭代已被其他操作更新，请刷新后重试。", 409);
+    }
+    throw error;
+  }
 }

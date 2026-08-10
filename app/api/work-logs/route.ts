@@ -15,6 +15,7 @@ import {
   auditLogs,
   projectMembers,
   projects,
+  sprints,
   tasks,
   users,
   workLogs,
@@ -31,6 +32,10 @@ import { hasTrustedOrigin } from "@/lib/request-security";
 import { dateKeyInTimeZone, startOfUtcDay } from "@/lib/reporting";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
+import {
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
 import { parseDate, safeHours } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -112,11 +117,13 @@ export async function GET(request: Request) {
         durationHours: workLogs.durationHours,
         note: workLogs.note,
         createdAt: workLogs.createdAt,
+        sprintStatus: sprints.status,
       })
       .from(workLogs)
       .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
       .innerJoin(projects, eq(tasks.projectId, projects.id))
       .innerJoin(users, eq(workLogs.userId, users.id))
+      .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
       .where(and(...conditions))
       .orderBy(desc(workLogs.workDate), desc(workLogs.createdAt)),
     activeProjectIds.length
@@ -145,8 +152,10 @@ export async function GET(request: Request) {
             title: tasks.title,
             projectId: tasks.projectId,
             testerId: tasks.testerId,
+            sprintStatus: sprints.status,
           })
           .from(tasks)
+          .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
           .where(inArray(tasks.projectId, activeProjectIds))
           .orderBy(asc(tasks.title))
       : Promise.resolve([]),
@@ -209,11 +218,12 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    data: rows.map((row) => ({
+    data: rows.map(({ sprintStatus, ...row }) => ({
       ...row,
       workDate: row.workDate.toISOString(),
       createdAt: row.createdAt.toISOString(),
       canDelete:
+        !isCompletedSprintStatus(sprintStatus) &&
         !accessMap.get(row.projectId)?.archived &&
         (row.userId === currentUser.id ||
           canManageProject(currentUser, accessMap.get(row.projectId) ?? null)),
@@ -239,7 +249,14 @@ export async function GET(request: Request) {
         }),
     })),
     users: [...userMap.values()],
-    tasks: taskRows,
+    tasks: taskRows
+      .filter((task) => !isCompletedSprintStatus(task.sprintStatus))
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        projectId: task.projectId,
+        testerId: task.testerId,
+      })),
     currentUserId: currentUser.id,
     canCreate: activeProjectRows.some((project) =>
       canContributeToProject(currentUser, accessMap.get(project.id) ?? null),
@@ -290,14 +307,19 @@ export async function POST(request: Request) {
       projectId: tasks.projectId,
       testerId: tasks.testerId,
       archived: projects.archived,
+      sprintStatus: sprints.status,
     })
     .from(tasks)
     .innerJoin(projects, eq(tasks.projectId, projects.id))
+    .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
     .where(eq(tasks.id, taskId))
     .limit(1);
   if (!task) return apiError("任务不存在。", 404);
   const access = await getProjectAccess(currentUser, task.projectId);
   if (!access || task.archived) return apiError("任务不存在。", 404);
+  if (isCompletedSprintStatus(task.sprintStatus)) {
+    return apiError("已完成迭代为历史快照，请先重新打开后再登记工时。", 409);
+  }
   if (!canContributeToProject(currentUser, access)) {
     return apiError("无权在该项目中登记工时。", 403);
   }
@@ -339,6 +361,21 @@ export async function POST(request: Request) {
 
   try {
     const created = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([task.projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedTask] = await tx
+        .select({ projectId: tasks.projectId, sprintStatus: sprints.status })
+        .from(tasks)
+        .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+        .where(eq(tasks.id, taskId))
+        .limit(1);
+      if (!lockedTask || lockedTask.projectId !== task.projectId) {
+        throw new Error("TASK_CHANGED");
+      }
+      if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`${requestedUserId}:${workDate.toISOString().slice(0, 10)}`}))`,
       );
@@ -396,6 +433,12 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Error && error.message === "DAILY_HOURS_LIMIT") {
       return apiError("该成员当天累计工时不能超过 24 小时。");
+    }
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再登记工时。", 409);
+    }
+    if (error instanceof Error && error.message === "TASK_CHANGED") {
+      return apiError("任务已被其他操作更新，请刷新后重试。", 409);
     }
     throw error;
   }

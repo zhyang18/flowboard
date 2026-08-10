@@ -23,6 +23,10 @@ import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
 import {
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
+import {
   isTaskPriority,
   isTaskStatus,
   parseDate,
@@ -93,12 +97,14 @@ export async function GET(request: Request) {
         projectColor: projects.color,
         assigneeName: assigneeUsers.name,
         testerName: testerUsers.name,
+        sprintStatus: sprints.status,
         overdue: sql<boolean>`${tasks.status} <> 'done' and ${tasks.dueDate} < now()`,
       })
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
       .leftJoin(assigneeUsers, eq(tasks.assigneeId, assigneeUsers.id))
       .leftJoin(testerUsers, eq(tasks.testerId, testerUsers.id))
+      .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
       .where(and(...conditions))
       .orderBy(asc(tasks.status), asc(tasks.sortOrder), desc(tasks.updatedAt)),
     projectIds.length
@@ -186,10 +192,13 @@ export async function GET(request: Request) {
         assigneeName: row.assigneeName,
         testerName: row.testerName,
         overdue: row.overdue,
-        canEdit: canEditTask(currentUser, access, row.task),
+        canEdit:
+          !isCompletedSprintStatus(row.sprintStatus) &&
+          canEditTask(currentUser, access, row.task),
         canManageProject: canManageProject(currentUser, access),
         canDelete:
-          canManageProject(currentUser, access) || row.task.reporterId === currentUser.id,
+          !isCompletedSprintStatus(row.sprintStatus) &&
+          (canManageProject(currentUser, access) || row.task.reporterId === currentUser.id),
       };
     }),
     projects: projectRows.map(({ ownerId, archived, ...project }) => ({
@@ -322,47 +331,70 @@ export async function POST(request: Request) {
 
   if (sprintId) {
     const [sprint] = await db
-      .select({ id: sprints.id })
+      .select({ id: sprints.id, status: sprints.status })
       .from(sprints)
       .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId)))
       .limit(1);
     if (!sprint) return apiError("迭代不存在或不属于所选项目。");
+    if (isCompletedSprintStatus(sprint.status)) {
+      return apiError("已完成迭代为历史快照，请先重新打开后再加入任务。", 409);
+    }
   }
 
-  const created = await db.transaction(async (tx) => {
-    const [order] = await tx
-      .select({ value: sql<number>`coalesce(max(${tasks.sortOrder}), -1) + 1` })
-      .from(tasks)
-      .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)));
-    const [task] = await tx
-      .insert(tasks)
-      .values({
-        projectId,
-        sprintId,
-        title,
-        description,
-        status,
-        priority,
-        assigneeId,
-        testerId,
-        reporterId: currentUser.id,
-        estimateHours,
-        actualHours: 0,
-        sortOrder: Number(order?.value ?? 0),
-        dueDate,
-        completedAt:
-          status === "done" && settings.autoCompleteTimestamp ? new Date() : null,
-      })
-      .returning();
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "task.create",
-      entityType: "task",
-      entityId: task.id,
-      metadata: { title: task.title, projectId: task.projectId },
+  try {
+    const created = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([projectId])) {
+        await tx.execute(lockQuery);
+      }
+      if (sprintId) {
+        const [lockedSprint] = await tx
+          .select({ status: sprints.status })
+          .from(sprints)
+          .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId)))
+          .limit(1);
+        if (!lockedSprint || isCompletedSprintStatus(lockedSprint.status)) {
+          throw new Error("COMPLETED_SPRINT");
+        }
+      }
+      const [order] = await tx
+        .select({ value: sql<number>`coalesce(max(${tasks.sortOrder}), -1) + 1` })
+        .from(tasks)
+        .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)));
+      const [task] = await tx
+        .insert(tasks)
+        .values({
+          projectId,
+          sprintId,
+          title,
+          description,
+          status,
+          priority,
+          assigneeId,
+          testerId,
+          reporterId: currentUser.id,
+          estimateHours,
+          actualHours: 0,
+          sortOrder: Number(order?.value ?? 0),
+          dueDate,
+          completedAt:
+            status === "done" && settings.autoCompleteTimestamp ? new Date() : null,
+        })
+        .returning();
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "task.create",
+        entityType: "task",
+        entityId: task.id,
+        metadata: { title: task.title, projectId: task.projectId },
+      });
+      return task;
     });
-    return task;
-  });
 
-  return NextResponse.json({ data: serializeTask(created) }, { status: 201 });
+    return NextResponse.json({ data: serializeTask(created) }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再加入任务。", 409);
+    }
+    throw error;
+  }
 }

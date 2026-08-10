@@ -4,10 +4,15 @@ import {
   canApproveTaskCompletion,
   canAssignTaskAssignee,
   canEditTask,
+  canExportReports,
   canManageProject,
   type ProjectAccess,
 } from "../lib/authorization";
-import { hasOtherActiveSprint } from "../lib/sprints";
+import {
+  hasOtherActiveSprint,
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "../lib/sprints";
 import { canOwnProject, projectMemberRoleForUser } from "../lib/users";
 
 const projectAccess: ProjectAccess = {
@@ -101,4 +106,22 @@ test("归档项目不可继续维护且同项目只能有一个进行中迭代",
   assert.equal(hasOtherActiveSprint(["sprint-1"], null), true);
   assert.equal(hasOtherActiveSprint(["sprint-1"], "sprint-1"), false);
   assert.equal(hasOtherActiveSprint(["sprint-1", "sprint-2"], "sprint-1"), true);
+});
+
+test("已完成迭代被识别为历史快照且项目锁会去重", () => {
+  assert.equal(isCompletedSprintStatus("completed"), true);
+  assert.equal(isCompletedSprintStatus("active"), false);
+  assert.equal(isCompletedSprintStatus(null), false);
+  assert.equal(
+    projectLifecycleLockQueries(["project-2", "project-1", "project-2"]).length,
+    2,
+  );
+});
+
+test("只有管理员角色可以导出报表", () => {
+  assert.equal(canExportReports({ role: "super_admin" }), true);
+  assert.equal(canExportReports({ role: "project_admin" }), true);
+  assert.equal(canExportReports({ role: "member" }), false);
+  assert.equal(canExportReports({ role: "tester" }), false);
+  assert.equal(canExportReports({ role: "viewer" }), false);
 });

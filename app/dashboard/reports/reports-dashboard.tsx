@@ -73,9 +73,10 @@ function csvCell(value: string | number): string {
 /**
  * 渲染交付快照、周期工时趋势和成员负载报表。
  *
+ * @param canExport 当前用户是否具备报表文件导出权限。
  * @return 报表组件。
  */
-export default function ReportsDashboard() {
+export default function ReportsDashboard({ canExport }: { canExport: boolean }) {
   const [period, setPeriod] = useState("30");
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,7 +161,7 @@ export default function ReportsDashboard() {
         <div className="report-heading-actions">
           <label className="module-select"><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></label>
           <button className="secondary-action" type="button" onClick={() => void loadReport()} aria-label="刷新报表"><RefreshCw size={15} /></button>
-          <button className="primary-action module-primary report-export" type="button" onClick={exportCsv} disabled={!data}><Download size={16} /> 导出 CSV</button>
+          {canExport && <button className="primary-action module-primary report-export" type="button" onClick={exportCsv} disabled={!data}><Download size={16} /> 导出 CSV</button>}
         </div>
       </section>
 

@@ -1,3 +1,6 @@
+import { sql, type SQL } from "drizzle-orm";
+import type { SprintStatus } from "@/db/schema";
+
 /**
  * 判断项目中是否存在当前迭代之外的进行中迭代。
  *
@@ -10,4 +13,29 @@ export function hasOtherActiveSprint(
   currentSprintId: string | null,
 ): boolean {
   return activeSprintIds.some((id) => id !== currentSprintId);
+}
+
+/**
+ * 判断迭代状态是否代表不可直接改写的历史快照。
+ *
+ * @param status 当前迭代状态，未加入迭代时为 null。
+ * @return 已完成迭代返回 true，否则返回 false。
+ */
+export function isCompletedSprintStatus(status: SprintStatus | null): boolean {
+  return status === "completed";
+}
+
+/**
+ * 为项目迭代生命周期生成顺序稳定的事务级锁查询。
+ *
+ * @param projectIds 需要串行保护的项目 ID 列表。
+ * @return 去重并按 ID 排序后的 PostgreSQL 事务级锁查询。
+ */
+export function projectLifecycleLockQueries(projectIds: string[]): SQL[] {
+  return [...new Set(projectIds)]
+    .filter(Boolean)
+    .sort()
+    .map((projectId) =>
+      sql`select pg_advisory_xact_lock(hashtext(${`project-lifecycle:${projectId}`}))`,
+    );
 }

@@ -6,6 +6,10 @@ import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import {
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
 
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
@@ -44,34 +48,62 @@ export async function PUT(request: Request, context: RouteContext) {
     return apiError("已完成迭代为历史快照，请先重新打开后再调整任务范围。", 409);
   }
 
-  if (taskIds.length) {
-    const selected = await db
-      .select({ id: tasks.id })
-      .from(tasks)
-      .where(and(inArray(tasks.id, taskIds), eq(tasks.projectId, sprint.projectId)));
-    if (selected.length !== taskIds.length) {
-      return apiError("只能加入同一项目中的有效任务。");
-    }
-  }
+  try {
+    await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([sprint.projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedSprint] = await tx
+        .select({ status: sprints.status })
+        .from(sprints)
+        .where(eq(sprints.id, id))
+        .limit(1);
+      if (!lockedSprint || isCompletedSprintStatus(lockedSprint.status)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
+      if (taskIds.length) {
+        const selected = await tx
+          .select({ id: tasks.id, sourceSprintStatus: sprints.status })
+          .from(tasks)
+          .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+          .where(and(inArray(tasks.id, taskIds), eq(tasks.projectId, sprint.projectId)));
+        if (selected.length !== taskIds.length) {
+          throw new Error("INVALID_TASK_SCOPE");
+        }
+        if (selected.some((task) => isCompletedSprintStatus(task.sourceSprintStatus))) {
+          throw new Error("COMPLETED_SOURCE_SPRINT");
+        }
+      }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(tasks)
-      .set({ sprintId: null, updatedAt: new Date() })
-      .where(eq(tasks.sprintId, id));
-    if (taskIds.length) {
       await tx
         .update(tasks)
-        .set({ sprintId: id, updatedAt: new Date() })
-        .where(inArray(tasks.id, taskIds));
-    }
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "sprint.tasks.update",
-      entityType: "sprint",
-      entityId: id,
-      metadata: { taskIds },
+        .set({ sprintId: null, updatedAt: new Date() })
+        .where(eq(tasks.sprintId, id));
+      if (taskIds.length) {
+        await tx
+          .update(tasks)
+          .set({ sprintId: id, updatedAt: new Date() })
+          .where(inArray(tasks.id, taskIds));
+      }
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "sprint.tasks.update",
+        entityType: "sprint",
+        entityId: id,
+        metadata: { taskIds },
+      });
     });
-  });
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再调整任务范围。", 409);
+    }
+    if (error instanceof Error && error.message === "COMPLETED_SOURCE_SPRINT") {
+      return apiError("所选任务属于已完成迭代，请先重新打开原迭代后再调整。", 409);
+    }
+    if (error instanceof Error && error.message === "INVALID_TASK_SCOPE") {
+      return apiError("只能加入同一项目中的有效任务。");
+    }
+    throw error;
+  }
 }

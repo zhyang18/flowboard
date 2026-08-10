@@ -6,6 +6,7 @@ import {
   gte,
   inArray,
   ne,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -16,6 +17,7 @@ import {
   projectMembers,
   projects,
   sessions,
+  sprints,
   tasks,
   users,
   workLogs,
@@ -27,6 +29,7 @@ import { countWeekdays, startOfUtcDay } from "@/lib/reporting";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
+import { projectLifecycleLockQueries } from "@/lib/sprints";
 import { parseUserInput, serializeUser } from "@/lib/users";
 
 export const runtime = "nodejs";
@@ -176,9 +179,26 @@ export async function PATCH(request: Request, context: RouteContext) {
       return apiError("该用户仍是未归档项目负责人，请先转移项目负责人。", 409);
     }
   }
+  const assignmentProjectRows =
+    willLoseDeveloperAssignments || willLoseTesterAssignments
+      ? await db
+          .selectDistinct({ projectId: tasks.projectId })
+          .from(tasks)
+          .where(
+            or(
+              willLoseDeveloperAssignments ? eq(tasks.assigneeId, id) : undefined,
+              willLoseTesterAssignments ? eq(tasks.testerId, id) : undefined,
+            ),
+          )
+      : [];
 
   try {
     const updated = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries(
+        assignmentProjectRows.map((project) => project.projectId),
+      )) {
+        await tx.execute(lockQuery);
+      }
       const [user] = await tx
         .update(users)
         .set({
@@ -192,13 +212,35 @@ export async function PATCH(request: Request, context: RouteContext) {
         await tx
           .update(tasks)
           .set({ assigneeId: null, updatedAt: new Date() })
-          .where(and(eq(tasks.assigneeId, id), ne(tasks.status, "done")));
+          .where(
+            and(
+              eq(tasks.assigneeId, id),
+              ne(tasks.status, "done"),
+              notExists(
+                tx
+                  .select({ id: sprints.id })
+                  .from(sprints)
+                  .where(and(eq(sprints.id, tasks.sprintId), eq(sprints.status, "completed"))),
+              ),
+            ),
+          );
       }
       if (willLoseTesterAssignments) {
         await tx
           .update(tasks)
           .set({ testerId: null, updatedAt: new Date() })
-          .where(and(eq(tasks.testerId, id), ne(tasks.status, "done")));
+          .where(
+            and(
+              eq(tasks.testerId, id),
+              ne(tasks.status, "done"),
+              notExists(
+                tx
+                  .select({ id: sprints.id })
+                  .from(sprints)
+                  .where(and(eq(sprints.id, tasks.sprintId), eq(sprints.status, "completed"))),
+              ),
+            ),
+          );
       }
       if (passwordHash || (fields.status && fields.status !== "active")) {
         await tx.delete(sessions).where(eq(sessions.userId, id));

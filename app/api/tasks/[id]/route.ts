@@ -20,6 +20,10 @@ import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
 import {
+  isCompletedSprintStatus,
+  projectLifecycleLockQueries,
+} from "@/lib/sprints";
+import {
   isTaskPriority,
   isTaskStatus,
   parseDate,
@@ -55,12 +59,21 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const db = getDb();
-  const [existing] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!existing) return apiError("任务不存在。", 404);
+  const [existingRecord] = await db
+    .select({ task: tasks, sprintStatus: sprints.status })
+    .from(tasks)
+    .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+    .where(eq(tasks.id, id))
+    .limit(1);
+  if (!existingRecord) return apiError("任务不存在。", 404);
+  const existing = existingRecord.task;
   const existingAccess = await getProjectAccess(currentUser, existing.projectId);
   if (!existingAccess) return apiError("任务不存在。", 404);
   if (!canEditTask(currentUser, existingAccess, existing)) {
     return apiError("无权编辑该任务。", 403);
+  }
+  if (isCompletedSprintStatus(existingRecord.sprintStatus)) {
+    return apiError("已完成迭代为历史快照，请先重新打开后再修改任务。", 409);
   }
   const managesExistingProject = canManageProject(currentUser, existingAccess);
   if (currentUser.role === "tester" && !managesExistingProject) {
@@ -192,11 +205,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   if (sprintId) {
     const [sprint] = await db
-      .select({ id: sprints.id })
+      .select({ id: sprints.id, status: sprints.status })
       .from(sprints)
       .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, requestedProjectId)))
       .limit(1);
     if (!sprint) return apiError("迭代不存在或不属于所选项目。");
+    if (isCompletedSprintStatus(sprint.status)) {
+      return apiError("已完成迭代为历史快照，请先重新打开后再加入任务。", 409);
+    }
   }
 
   const title = "title" in body ? textValue(body.title, 160) : existing.title;
@@ -210,58 +226,100 @@ export async function PATCH(request: Request, context: RouteContext) {
     return apiError("当前工作空间要求任务填写预估工时。");
   }
 
-  const updated = await db.transaction(async (tx) => {
-    let sortOrder = existing.sortOrder;
-    if (status !== existing.status || requestedProjectId !== existing.projectId) {
-      const [order] = await tx
-        .select({ value: sql<number>`coalesce(max(${tasks.sortOrder}), -1) + 1` })
+  try {
+    const updated = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([
+        existing.projectId,
+        requestedProjectId,
+      ])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedTask] = await tx
+        .select({
+          updatedAt: tasks.updatedAt,
+          sprintStatus: sprints.status,
+        })
         .from(tasks)
-        .where(and(eq(tasks.projectId, requestedProjectId), eq(tasks.status, status)));
-      sortOrder = Number(order?.value ?? 0);
-    } else if (Number.isInteger(body.sortOrder)) {
-      sortOrder = Math.max(0, Number(body.sortOrder));
-    }
+        .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+        .where(eq(tasks.id, id))
+        .limit(1);
+      if (!lockedTask || lockedTask.updatedAt.getTime() !== existing.updatedAt.getTime()) {
+        throw new Error("TASK_CHANGED");
+      }
+      if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
+      if (sprintId) {
+        const [lockedSprint] = await tx
+          .select({ status: sprints.status })
+          .from(sprints)
+          .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, requestedProjectId)))
+          .limit(1);
+        if (!lockedSprint || isCompletedSprintStatus(lockedSprint.status)) {
+          throw new Error("COMPLETED_SPRINT");
+        }
+      }
 
-    const [task] = await tx
-      .update(tasks)
-      .set({
-        projectId: requestedProjectId,
-        sprintId,
-        title,
-        description:
-          "description" in body ? textValue(body.description, 1500) : existing.description,
-        status,
-        priority: isTaskPriority(body.priority) ? body.priority : existing.priority,
-        assigneeId,
-        testerId,
-        estimateHours,
-        sortOrder,
-        dueDate,
-        completedAt:
-          status === "done"
-            ? settings.autoCompleteTimestamp
-              ? existing.completedAt ?? new Date()
-              : existing.completedAt
-            : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, id))
-      .returning();
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "task.update",
-      entityType: "task",
-      entityId: id,
-      metadata: {
-        changedFields: Object.keys(body),
-        fromStatus: existing.status,
-        toStatus: task.status,
-      },
+      let sortOrder = existing.sortOrder;
+      if (status !== existing.status || requestedProjectId !== existing.projectId) {
+        const [order] = await tx
+          .select({ value: sql<number>`coalesce(max(${tasks.sortOrder}), -1) + 1` })
+          .from(tasks)
+          .where(and(eq(tasks.projectId, requestedProjectId), eq(tasks.status, status)));
+        sortOrder = Number(order?.value ?? 0);
+      } else if (Number.isInteger(body.sortOrder)) {
+        sortOrder = Math.max(0, Number(body.sortOrder));
+      }
+
+      const [task] = await tx
+        .update(tasks)
+        .set({
+          projectId: requestedProjectId,
+          sprintId,
+          title,
+          description:
+            "description" in body ? textValue(body.description, 1500) : existing.description,
+          status,
+          priority: isTaskPriority(body.priority) ? body.priority : existing.priority,
+          assigneeId,
+          testerId,
+          estimateHours,
+          sortOrder,
+          dueDate,
+          completedAt:
+            status === "done"
+              ? settings.autoCompleteTimestamp
+                ? existing.completedAt ?? new Date()
+                : existing.completedAt
+              : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, id))
+        .returning();
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "task.update",
+        entityType: "task",
+        entityId: id,
+        metadata: {
+          changedFields: Object.keys(body),
+          fromStatus: existing.status,
+          toStatus: task.status,
+        },
+      });
+      return task;
     });
-    return task;
-  });
 
-  return NextResponse.json({ data: serializeTask(updated) });
+    return NextResponse.json({ data: serializeTask(updated) });
+  } catch (error) {
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再修改任务。", 409);
+    }
+    if (error instanceof Error && error.message === "TASK_CHANGED") {
+      return apiError("任务已被其他操作更新，请刷新后重试。", 409);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -278,32 +336,72 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const db = getDb();
-  const [existing] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!existing) return apiError("任务不存在。", 404);
+  const [existingRecord] = await db
+    .select({ task: tasks, sprintStatus: sprints.status })
+    .from(tasks)
+    .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+    .where(eq(tasks.id, id))
+    .limit(1);
+  if (!existingRecord) return apiError("任务不存在。", 404);
+  const existing = existingRecord.task;
   const access = await getProjectAccess(currentUser, existing.projectId);
   if (!access || access.archived) return apiError("任务不存在。", 404);
   if (!canManageProject(currentUser, access) && existing.reporterId !== currentUser.id) {
     return apiError("只能删除自己创建的任务。", 403);
   }
-
-  const [logCount] = await db
-    .select({ value: count() })
-    .from(workLogs)
-    .where(eq(workLogs.taskId, id));
-  if (Number(logCount?.value ?? 0) > 0) {
-    return apiError("该任务已有工时记录，为保留历史数据不能删除。", 409);
+  if (isCompletedSprintStatus(existingRecord.sprintStatus)) {
+    return apiError("已完成迭代为历史快照，请先重新打开后再删除任务。", 409);
   }
 
-  await db.transaction(async (tx) => {
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "task.delete",
-      entityType: "task",
-      entityId: id,
-      metadata: { title: existing.title, projectId: existing.projectId },
+  try {
+    await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([existing.projectId])) {
+        await tx.execute(lockQuery);
+      }
+      const [lockedTask] = await tx
+        .select({
+          updatedAt: tasks.updatedAt,
+          sprintStatus: sprints.status,
+        })
+        .from(tasks)
+        .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
+        .where(eq(tasks.id, id))
+        .limit(1);
+      if (!lockedTask || lockedTask.updatedAt.getTime() !== existing.updatedAt.getTime()) {
+        throw new Error("TASK_CHANGED");
+      }
+      if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
+        throw new Error("COMPLETED_SPRINT");
+      }
+      const [logCount] = await tx
+        .select({ value: count() })
+        .from(workLogs)
+        .where(eq(workLogs.taskId, id));
+      if (Number(logCount?.value ?? 0) > 0) {
+        throw new Error("TASK_HAS_WORK_LOGS");
+      }
+      const [deleted] = await tx.delete(tasks).where(eq(tasks.id, id)).returning({ id: tasks.id });
+      if (!deleted) throw new Error("TASK_CHANGED");
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "task.delete",
+        entityType: "task",
+        entityId: id,
+        metadata: { title: existing.title, projectId: existing.projectId },
+      });
     });
-    await tx.delete(tasks).where(eq(tasks.id, id));
-  });
 
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
+      return apiError("已完成迭代为历史快照，请先重新打开后再删除任务。", 409);
+    }
+    if (error instanceof Error && error.message === "TASK_HAS_WORK_LOGS") {
+      return apiError("该任务已有工时记录，为保留历史数据不能删除。", 409);
+    }
+    if (error instanceof Error && error.message === "TASK_CHANGED") {
+      return apiError("任务已被其他操作更新，请刷新后重试。", 409);
+    }
+    throw error;
+  }
 }

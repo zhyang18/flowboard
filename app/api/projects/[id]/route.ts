@@ -1,10 +1,19 @@
-import { and, eq, inArray, isNotNull, ne, notInArray } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  ne,
+  notExists,
+  notInArray,
+} from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
   auditLogs,
   projectMembers,
   projects,
+  sprints,
   tasks,
   users,
 } from "@/db/schema";
@@ -12,6 +21,7 @@ import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { projectLifecycleLockQueries } from "@/lib/sprints";
 import { canOwnProject, projectMemberRoleForUser } from "@/lib/users";
 import {
   isProjectStatus,
@@ -112,6 +122,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const updated = await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([id])) {
+        await tx.execute(lockQuery);
+      }
       const [project] = await tx
         .update(projects)
         .set({
@@ -139,6 +152,12 @@ export async function PATCH(request: Request, context: RouteContext) {
           and(
             eq(tasks.projectId, id),
             ne(tasks.status, "done"),
+            notExists(
+              tx
+                .select({ id: sprints.id })
+                .from(sprints)
+                .where(and(eq(sprints.id, tasks.sprintId), eq(sprints.status, "completed"))),
+            ),
             isNotNull(tasks.assigneeId),
             developerIds.length
               ? notInArray(tasks.assigneeId, developerIds)
@@ -152,6 +171,12 @@ export async function PATCH(request: Request, context: RouteContext) {
           and(
             eq(tasks.projectId, id),
             ne(tasks.status, "done"),
+            notExists(
+              tx
+                .select({ id: sprints.id })
+                .from(sprints)
+                .where(and(eq(sprints.id, tasks.sprintId), eq(sprints.status, "completed"))),
+            ),
             isNotNull(tasks.testerId),
             testerIds.length
               ? notInArray(tasks.testerId, testerIds)

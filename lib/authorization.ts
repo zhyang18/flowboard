@@ -35,6 +35,16 @@ export function canCreateProjects(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
+ * 判断用户是否具备报表文件导出权限。
+ *
+ * @param user 当前登录用户。
+ * @return 超级管理员或项目管理员返回 true。
+ */
+export function canExportReports(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "super_admin" || user.role === "project_admin";
+}
+
+/**
  * 生成当前用户可见项目的数据库过滤条件。
  *
  * @param user 当前登录用户。
