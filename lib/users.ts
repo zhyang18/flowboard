@@ -1,10 +1,11 @@
-import type { UserRole, UserStatus } from "@/db/schema";
+import type { ProjectMemberRole, UserRole, UserStatus } from "@/db/schema";
 import { normalizeEmail, textValue } from "./api";
 
 export const USER_ROLES: UserRole[] = [
   "super_admin",
   "project_admin",
   "member",
+  "tester",
   "viewer",
 ];
 
@@ -18,6 +19,7 @@ export const roleLabels: Record<UserRole, string> = {
   super_admin: "超级管理员",
   project_admin: "项目管理员",
   member: "研发成员",
+  tester: "测试人员",
   viewer: "只读访客",
 };
 
@@ -48,6 +50,33 @@ export function isUserStatus(value: unknown): value is UserStatus {
     typeof value === "string" &&
     USER_STATUSES.includes(value as UserStatus)
   );
+}
+
+/**
+ * 判断用户角色是否允许担任项目负责人。
+ *
+ * @param role 待判断的用户角色。
+ * @return 可以担任项目负责人时返回 true。
+ */
+export function canOwnProject(role: UserRole): boolean {
+  return role !== "viewer" && role !== "tester";
+}
+
+/**
+ * 根据全局角色和负责人关系计算项目成员角色。
+ *
+ * @param role 用户的全局角色。
+ * @param isOwner 用户是否为项目负责人。
+ * @return 对应的项目成员角色。
+ */
+export function projectMemberRoleForUser(
+  role: UserRole,
+  isOwner: boolean,
+): ProjectMemberRole {
+  if (isOwner) return "manager";
+  if (role === "viewer") return "viewer";
+  if (role === "tester") return "tester";
+  return "member";
 }
 
 export type UserInput = {

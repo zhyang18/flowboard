@@ -7,7 +7,6 @@ import {
   projects,
   tasks,
   users,
-  type ProjectMemberRole,
 } from "@/db/schema";
 import {
   canCreateProjects,
@@ -17,6 +16,7 @@ import {
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { canOwnProject, projectMemberRoleForUser } from "@/lib/users";
 import {
   isProjectStatus,
   parseDate,
@@ -162,6 +162,7 @@ export async function GET() {
         members: members.map(({ userId, name, role }) => ({ id: userId, name, role })),
         memberIds: members.map((member) => member.userId),
         memberCount: members.length,
+        testerCount: members.filter((member) => member.role === "tester").length,
         canManage: canManageProject(currentUser, {
           projectId: project.id,
           ownerId: project.ownerId,
@@ -176,7 +177,7 @@ export async function GET() {
       };
     }),
     owners: canCreate || canManageAny
-      ? peopleRows.filter((person) => person.role !== "viewer")
+      ? peopleRows.filter((person) => canOwnProject(person.role))
       : [],
     people: canCreate || canManageAny ? peopleRows : [],
     canCreate,
@@ -233,8 +234,8 @@ export async function POST(request: Request) {
     return apiError("项目成员中包含不存在或已停用的账号。");
   }
   const owner = activeMembers.find((member) => member.id === ownerId);
-  if (!owner || owner.role === "viewer") {
-    return apiError("项目负责人必须是正常状态的非只读用户。");
+  if (!owner || !canOwnProject(owner.role)) {
+    return apiError("项目负责人必须是正常状态的管理员或研发成员。");
   }
 
   try {
@@ -256,11 +257,7 @@ export async function POST(request: Request) {
         activeMembers.map((member) => ({
           projectId: project.id,
           userId: member.id,
-          role: (member.id === ownerId
-            ? "manager"
-            : member.role === "viewer"
-              ? "viewer"
-              : "member") as ProjectMemberRole,
+          role: projectMemberRoleForUser(member.role, member.id === ownerId),
         })),
       );
       await tx.insert(auditLogs).values({

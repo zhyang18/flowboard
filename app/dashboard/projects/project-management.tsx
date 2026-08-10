@@ -42,6 +42,7 @@ type ProjectRecord = {
   actualHours: number;
   memberIds: string[];
   memberCount: number;
+  testerCount: number;
   canManage: boolean;
   overdue: boolean;
 };
@@ -368,7 +369,7 @@ export default function ProjectManagement() {
                   </span>
                 </div>
                 <footer>
-                  <span><Users2 size={14} /> {project.memberCount} 位成员 · {project.taskCount} 项任务</span>
+                  <span><Users2 size={14} /> {project.memberCount} 位成员（测试 {project.testerCount}）· {project.taskCount} 项任务</span>
                   {project.canManage && (
                     <div>
                       <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
@@ -456,12 +457,12 @@ export default function ProjectManagement() {
                             }
                           />
                           <span>{person.name}</span>
-                          <small>{isOwner ? "负责人" : person.role === "viewer" ? "只读" : "成员"}</small>
+                          <small>{isOwner ? "负责人" : person.role === "viewer" ? "只读" : person.role === "tester" ? "测试" : "研发"}</small>
                         </label>
                       );
                     })}
                   </div>
-                  <p>负责人会自动加入；任务负责人只能从这里的非只读成员中选择。</p>
+                  <p>负责人会自动加入；研发成员可指派为开发负责人，测试人员可独立指派为测试负责人并参与迭代验收和工时登记。</p>
                 </fieldset>
                 <label>
                   <span>开始日期</span>

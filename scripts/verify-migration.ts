@@ -23,6 +23,8 @@ async function main(): Promise<void> {
       Array<{
         projectMembersTable: boolean;
         loginRateLimitsTable: boolean;
+        testerColumn: boolean;
+        testerRoleValues: number;
         requiredConstraints: number;
         activeUserCount: number;
         projectMemberCount: number;
@@ -34,6 +36,7 @@ async function main(): Promise<void> {
         taskActualHours: number;
         missingOwnerManagers: number;
         invalidTaskAssignees: number;
+        invalidTaskTesters: number;
         invalidTaskReporters: number;
         invalidWorkLogUsers: number;
         crossProjectSprintTasks: number;
@@ -43,6 +46,20 @@ async function main(): Promise<void> {
       select
         to_regclass('public.project_members') is not null as "projectMembersTable",
         to_regclass('public.login_rate_limits') is not null as "loginRateLimitsTable",
+        exists (
+          select 1
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'tasks'
+            and column_name = 'tester_id'
+        ) as "testerColumn",
+        (
+          select count(*)::int
+          from pg_enum
+          inner join pg_type on pg_type.oid = pg_enum.enumtypid
+          where pg_type.typname in ('user_role', 'project_member_role')
+            and pg_enum.enumlabel = 'tester'
+        ) as "testerRoleValues",
         (
           select count(*)::int
           from pg_constraint
@@ -77,8 +94,30 @@ async function main(): Promise<void> {
           left join project_members
             on project_members.project_id = tasks.project_id
             and project_members.user_id = tasks.assignee_id
-          where tasks.assignee_id is not null and project_members.user_id is null
+          left join users on users.id = tasks.assignee_id
+          where tasks.assignee_id is not null
+            and (
+              project_members.user_id is null
+              or project_members.role not in ('manager', 'member')
+              or users.status <> 'active'
+              or users.role in ('tester', 'viewer')
+            )
         ) as "invalidTaskAssignees",
+        (
+          select count(*)::int
+          from tasks
+          left join project_members
+            on project_members.project_id = tasks.project_id
+            and project_members.user_id = tasks.tester_id
+          left join users on users.id = tasks.tester_id
+          where tasks.tester_id is not null
+            and (
+              project_members.user_id is null
+              or project_members.role <> 'tester'
+              or users.status <> 'active'
+              or users.role <> 'tester'
+            )
+        ) as "invalidTaskTesters",
         (
           select count(*)::int
           from tasks
@@ -118,9 +157,12 @@ async function main(): Promise<void> {
     const verified =
       summary.projectMembersTable &&
       summary.loginRateLimitsTable &&
+      summary.testerColumn &&
+      summary.testerRoleValues === 2 &&
       summary.requiredConstraints === 5 &&
       summary.missingOwnerManagers === 0 &&
       summary.invalidTaskAssignees === 0 &&
+      summary.invalidTaskTesters === 0 &&
       summary.invalidTaskReporters === 0 &&
       summary.invalidWorkLogUsers === 0 &&
       summary.crossProjectSprintTasks === 0 &&

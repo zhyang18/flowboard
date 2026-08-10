@@ -10,6 +10,7 @@ import {
   GripVertical,
   Plus,
   Search,
+  ShieldCheck,
   Trash2,
   UserRound,
   X,
@@ -22,7 +23,7 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import type { TaskPriority, TaskStatus } from "@/db/schema";
+import type { TaskPriority, TaskStatus, UserRole } from "@/db/schema";
 import {
   taskPriorityLabels,
   taskStatusLabels,
@@ -41,6 +42,8 @@ type BoardTask = {
   priority: TaskPriority;
   assigneeId: string | null;
   assigneeName: string | null;
+  testerId: string | null;
+  testerName: string | null;
   estimateHours: number;
   actualHours: number;
   sortOrder: number;
@@ -61,6 +64,7 @@ type ProjectOption = {
   canManage: boolean;
 };
 type AssigneeOption = { id: string; name: string; projectIds: string[] };
+type TesterOption = { id: string; name: string; projectIds: string[] };
 
 type TaskForm = {
   projectId: string;
@@ -69,6 +73,7 @@ type TaskForm = {
   status: TaskStatus;
   priority: TaskPriority;
   assigneeId: string;
+  testerId: string;
   estimateHours: number;
   dueDate: string;
 };
@@ -80,6 +85,7 @@ const emptyForm: TaskForm = {
   status: "todo",
   priority: "medium",
   assigneeId: "",
+  testerId: "",
   estimateHours: 4,
   dueDate: "",
 };
@@ -133,10 +139,14 @@ export default function TaskBoard() {
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
+  const [testers, setTesters] = useState<TesterOption[]>([]);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole>("member");
   const [canCreate, setCanCreate] = useState(false);
   const [defaultEstimateHours, setDefaultEstimateHours] = useState(4);
   const [projectId, setProjectId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [testerId, setTesterId] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -149,7 +159,7 @@ export default function TaskBoard() {
   const [saving, setSaving] = useState(false);
 
   /**
-   * 按当前筛选条件加载任务和可选负责人。
+   * 按当前筛选条件加载任务以及可选的开发和测试负责人。
    *
    * @return 加载完成后的 Promise。
    */
@@ -159,6 +169,7 @@ export default function TaskBoard() {
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
     if (assigneeId) params.set("assigneeId", assigneeId);
+    if (testerId) params.set("testerId", testerId);
     if (query.trim()) params.set("query", query.trim());
     try {
       const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
@@ -166,6 +177,9 @@ export default function TaskBoard() {
         data?: BoardTask[];
         projects?: ProjectOption[];
         assignees?: AssigneeOption[];
+        testers?: TesterOption[];
+        currentUserId?: string;
+        currentUserRole?: UserRole;
         canCreate?: boolean;
         defaultEstimateHours?: number;
         error?: string;
@@ -174,6 +188,9 @@ export default function TaskBoard() {
       setTasks(result.data ?? []);
       setProjects(result.projects ?? []);
       setAssignees(result.assignees ?? []);
+      setTesters(result.testers ?? []);
+      setCurrentUserId(result.currentUserId ?? "");
+      setCurrentUserRole(result.currentUserRole ?? "member");
       setCanCreate(Boolean(result.canCreate));
       setDefaultEstimateHours(result.defaultEstimateHours ?? 4);
     } catch (loadError) {
@@ -181,7 +198,7 @@ export default function TaskBoard() {
     } finally {
       setLoading(false);
     }
-  }, [assigneeId, projectId, query]);
+  }, [assigneeId, projectId, query, testerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
@@ -224,6 +241,21 @@ export default function TaskBoard() {
             writableProject &&
             assignee.projectIds.includes(writableProject.id),
         )?.id ?? "",
+      testerId:
+        currentUserRole === "tester" &&
+        testers.some(
+          (tester) =>
+            tester.id === currentUserId &&
+            writableProject &&
+            tester.projectIds.includes(writableProject.id),
+        )
+          ? currentUserId
+          : testers.find(
+          (tester) =>
+            tester.id === testerId &&
+            writableProject &&
+            tester.projectIds.includes(writableProject.id),
+          )?.id ?? "",
     });
     setModalOpen(true);
   }
@@ -243,6 +275,7 @@ export default function TaskBoard() {
       status: task.status,
       priority: task.priority,
       assigneeId: task.assigneeId ?? "",
+      testerId: task.testerId ?? "",
       estimateHours: task.estimateHours,
       dueDate: dateInput(task.dueDate),
     });
@@ -391,8 +424,16 @@ export default function TaskBoard() {
         <label className="module-select">
           <UserRound size={14} />
           <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
-            <option value="">全部负责人</option>
+            <option value="">全部开发负责人</option>
             {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+          </select>
+          <ChevronDown size={14} />
+        </label>
+        <label className="module-select">
+          <ShieldCheck size={14} />
+          <select value={testerId} onChange={(event) => setTesterId(event.target.value)}>
+            <option value="">全部测试负责人</option>
+            {testers.map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
           </select>
           <ChevronDown size={14} />
         </label>
@@ -481,8 +522,13 @@ export default function TaskBoard() {
                               {overdue ? <CircleAlert size={13} /> : <CalendarClock size={13} />}
                               {dateLabel(task.dueDate)}
                             </span>
-                            <span className="task-assignee" title={task.assigneeName ?? "待认领"}>
-                              {task.assigneeName?.slice(0, 1) ?? "?"}
+                            <span className="task-people">
+                              <span className="task-assignee" title={`开发：${task.assigneeName ?? "待认领"}`}>
+                                {task.assigneeName?.slice(0, 1) ?? "?"}
+                              </span>
+                              <span className="task-assignee task-tester" title={`测试：${task.testerName ?? "待指派"}`}>
+                                {task.testerName?.slice(0, 1) ?? "测"}
+                              </span>
                             </span>
                           </footer>
                           {task.completedAt && (
@@ -536,6 +582,13 @@ export default function TaskBoard() {
                       )
                         ? form.assigneeId
                         : "",
+                      testerId: testers.some(
+                        (tester) =>
+                          tester.id === form.testerId &&
+                          tester.projectIds.includes(nextProjectId),
+                      )
+                        ? form.testerId
+                        : "",
                     });
                   }}>
                     <option value="">请选择</option>
@@ -547,10 +600,17 @@ export default function TaskBoard() {
                   </select>
                 </label>
                 <label>
-                  <span>负责人</span>
+                  <span>开发负责人</span>
                   <select disabled={Boolean(editingId && !tasks.find((task) => task.id === editingId)?.canManageProject)} value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
                     <option value="">待认领</option>
                     {assignees.filter((assignee) => assignee.projectIds.includes(form.projectId)).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>测试负责人</span>
+                  <select disabled={editingId ? !tasks.find((task) => task.id === editingId)?.canManageProject : !projects.find((project) => project.id === form.projectId)?.canManage} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
+                    <option value="">待指派</option>
+                    {testers.filter((tester) => tester.projectIds.includes(form.projectId)).map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
                   </select>
                 </label>
                 <label>
@@ -589,7 +649,7 @@ export default function TaskBoard() {
               </div>
               <div className="time-form-hint">
                 <Clock3 size={15} />
-                <span>实际工时只由“工时分析”中的明细自动汇总；任务进入“已完成”后按工作空间设置记录实际完成时间。</span>
+                <span>开发和测试负责人分别参与任务执行与验收；实际工时由“工时分析”中的明细自动汇总，任务完成后记录实际完成时间。</span>
               </div>
               <footer>
                 <button type="button" onClick={() => setModalOpen(false)}>取消</button>

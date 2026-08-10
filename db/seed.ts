@@ -67,7 +67,7 @@ const seedUsers = [
     phone: "138 0000 1028",
     department: "质量中心",
     team: "测试保障组",
-    role: "member" as const,
+    role: "tester" as const,
     status: "active" as const,
     projectCount: 4,
     capacity: 81,
@@ -216,9 +216,10 @@ async function seed() {
       status: "done" as const,
       priority: "high" as const,
       assigneeId: userId("lisi@flowboard.local") ?? adminId,
+      testerId: userId("sunqi@flowboard.local") ?? null,
       reporterId: adminId,
       estimateHours: 8,
-      actualHours: 7.5,
+      actualHours: 9,
       sortOrder: 0,
       dueDate: new Date("2026-07-30T23:59:59+08:00"),
       completedAt: new Date("2026-07-30T18:20:00+08:00"),
@@ -230,9 +231,10 @@ async function seed() {
       status: "review" as const,
       priority: "high" as const,
       assigneeId: userId("wangwu@flowboard.local") ?? adminId,
+      testerId: userId("sunqi@flowboard.local") ?? null,
       reporterId: adminId,
       estimateHours: 6,
-      actualHours: 5.5,
+      actualHours: 7.5,
       sortOrder: 0,
       dueDate: new Date("2026-08-02T23:59:59+08:00"),
     },
@@ -243,6 +245,7 @@ async function seed() {
       status: "in_progress" as const,
       priority: "urgent" as const,
       assigneeId: userId("zhaoliu@flowboard.local") ?? adminId,
+      testerId: userId("sunqi@flowboard.local") ?? null,
       reporterId: adminId,
       estimateHours: 10,
       actualHours: 6.5,
@@ -255,7 +258,8 @@ async function seed() {
       description: "在手机上快速切换工作台、项目、看板和用户模块。",
       status: "todo" as const,
       priority: "medium" as const,
-      assigneeId: userId("sunqi@flowboard.local") ?? adminId,
+      assigneeId: userId("zhaoliu@flowboard.local") ?? adminId,
+      testerId: userId("sunqi@flowboard.local") ?? null,
       reporterId: adminId,
       estimateHours: 4,
       actualHours: 0,
@@ -269,6 +273,7 @@ async function seed() {
       status: "backlog" as const,
       priority: "medium" as const,
       assigneeId: userId("wujiu@flowboard.local") ?? adminId,
+      testerId: userId("sunqi@flowboard.local") ?? null,
       reporterId: adminId,
       estimateHours: 5,
       actualHours: 0,
@@ -304,6 +309,7 @@ async function seed() {
       title: tasks.title,
       projectId: tasks.projectId,
       assigneeId: tasks.assigneeId,
+      testerId: tasks.testerId,
       reporterId: tasks.reporterId,
     })
     .from(tasks);
@@ -382,31 +388,49 @@ async function seed() {
       durationHours: 7.5,
       note: "完成指标聚合、进度和工时偏差展示。",
       workDate: new Date("2026-07-30T10:00:00+08:00"),
+      userId: userId("lisi@flowboard.local"),
+    },
+    {
+      title: "完成工作台核心指标聚合",
+      durationHours: 1.5,
+      note: "完成核心指标验收与回归测试。",
+      workDate: new Date("2026-07-30T16:00:00+08:00"),
+      userId: userId("sunqi@flowboard.local"),
     },
     {
       title: "项目状态与归档流程",
       durationHours: 5.5,
       note: "完成项目编辑、状态切换和安全归档。",
       workDate: new Date("2026-07-31T10:00:00+08:00"),
+      userId: userId("wangwu@flowboard.local"),
+    },
+    {
+      title: "项目状态与归档流程",
+      durationHours: 2,
+      note: "覆盖状态切换、归档限制和权限回归。",
+      workDate: new Date("2026-07-31T13:00:00+08:00"),
+      userId: userId("sunqi@flowboard.local"),
     },
     {
       title: "任务拖拽流转与完成时间记录",
       durationHours: 6.5,
       note: "实现任务拖拽和完成时间自动记录。",
       workDate: new Date("2026-07-31T14:00:00+08:00"),
+      userId: userId("zhaoliu@flowboard.local"),
     },
   ];
 
   for (const logSeed of logSeeds) {
     const task = refreshedTasks.find((item) => item.title === logSeed.title);
-    if (!task?.assigneeId) continue;
+    const logUserId = logSeed.userId ?? task?.assigneeId;
+    if (!task || !logUserId) continue;
     const [existing] = await db
       .select({ id: workLogs.id })
       .from(workLogs)
       .where(
         and(
           eq(workLogs.taskId, task.id),
-          eq(workLogs.userId, task.assigneeId),
+          eq(workLogs.userId, logUserId),
           eq(workLogs.workDate, logSeed.workDate),
         ),
       )
@@ -414,7 +438,7 @@ async function seed() {
     if (!existing) {
       await db.insert(workLogs).values({
         taskId: task.id,
-        userId: task.assigneeId,
+        userId: logUserId,
         durationHours: logSeed.durationHours,
         note: logSeed.note,
         workDate: logSeed.workDate,
@@ -422,17 +446,20 @@ async function seed() {
     }
   }
 
-  const membershipMap = new Map<string, "manager" | "member" | "viewer">();
+  const membershipMap = new Map<string, "manager" | "member" | "tester" | "viewer">();
   for (const project of projectRows) {
     membershipMap.set(`${project.id}:${project.ownerId}`, "manager");
   }
   for (const task of refreshedTasks) {
-    for (const memberId of [task.assigneeId, task.reporterId]) {
+    for (const memberId of [task.assigneeId, task.testerId, task.reporterId]) {
       if (!memberId) continue;
       const user = userRows.find((item) => item.id === memberId);
       const key = `${task.projectId}:${memberId}`;
       if (!membershipMap.has(key)) {
-        membershipMap.set(key, user?.role === "viewer" ? "viewer" : "member");
+        membershipMap.set(
+          key,
+          user?.role === "viewer" ? "viewer" : user?.role === "tester" ? "tester" : "member",
+        );
       }
     }
   }

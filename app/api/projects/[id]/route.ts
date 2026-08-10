@@ -7,12 +7,12 @@ import {
   projects,
   tasks,
   users,
-  type ProjectMemberRole,
 } from "@/db/schema";
 import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { canOwnProject, projectMemberRoleForUser } from "@/lib/users";
 import {
   isProjectStatus,
   parseDate,
@@ -95,9 +95,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (activeMembers.length !== memberIds.length) {
     return apiError("项目成员中包含不存在或已停用的账号。");
   }
+  const developerIds = activeMembers
+    .filter((member) => member.role !== "viewer" && member.role !== "tester")
+    .map((member) => member.id);
+  const testerIds = activeMembers
+    .filter((member) => member.role === "tester")
+    .map((member) => member.id);
   const owner = activeMembers.find((member) => member.id === ownerId);
-  if (!owner || owner.role === "viewer") {
-    return apiError("项目负责人必须是正常状态的非只读用户。");
+  if (!owner || !canOwnProject(owner.role)) {
+    return apiError("项目负责人必须是正常状态的管理员或研发成员。");
   }
 
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
@@ -133,7 +139,21 @@ export async function PATCH(request: Request, context: RouteContext) {
           and(
             eq(tasks.projectId, id),
             isNotNull(tasks.assigneeId),
-            notInArray(tasks.assigneeId, memberIds),
+            developerIds.length
+              ? notInArray(tasks.assigneeId, developerIds)
+              : isNotNull(tasks.assigneeId),
+          ),
+        );
+      await tx
+        .update(tasks)
+        .set({ testerId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(tasks.projectId, id),
+            isNotNull(tasks.testerId),
+            testerIds.length
+              ? notInArray(tasks.testerId, testerIds)
+              : isNotNull(tasks.testerId),
           ),
         );
       await tx.delete(projectMembers).where(eq(projectMembers.projectId, id));
@@ -141,11 +161,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         activeMembers.map((member) => ({
           projectId: id,
           userId: member.id,
-          role: (member.id === ownerId
-            ? "manager"
-            : member.role === "viewer"
-              ? "viewer"
-              : "member") as ProjectMemberRole,
+          role: projectMemberRoleForUser(member.role, member.id === ownerId),
           updatedAt: new Date(),
         })),
       );

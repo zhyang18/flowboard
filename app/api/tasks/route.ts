@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
@@ -31,8 +32,11 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const assigneeUsers = alias(users, "assignee_users");
+const testerUsers = alias(users, "tester_users");
+
 /**
- * 获取当前用户可见的任务、项目和按项目约束的负责人选项。
+ * 获取当前用户可见的任务、项目以及按项目约束的开发和测试负责人选项。
  *
  * @param request 当前任务查询请求。
  * @return 任务看板数据及服务端计算的操作权限。
@@ -44,6 +48,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("projectId") ?? "";
   const assigneeId = searchParams.get("assigneeId") ?? "";
+  const testerId = searchParams.get("testerId") ?? "";
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
   const conditions: SQL[] = [
     eq(projects.archived, false),
@@ -51,6 +56,7 @@ export async function GET(request: Request) {
   ];
   if (projectId) conditions.push(eq(tasks.projectId, projectId));
   if (assigneeId) conditions.push(eq(tasks.assigneeId, assigneeId));
+  if (testerId) conditions.push(eq(tasks.testerId, testerId));
   if (query) {
     const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
     conditions.push(or(ilike(tasks.title, pattern), ilike(tasks.description, pattern))!);
@@ -84,12 +90,14 @@ export async function GET(request: Request) {
         projectName: projects.name,
         projectCode: projects.code,
         projectColor: projects.color,
-        assigneeName: users.name,
+        assigneeName: assigneeUsers.name,
+        testerName: testerUsers.name,
         overdue: sql<boolean>`${tasks.status} <> 'done' and ${tasks.dueDate} < now()`,
       })
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .leftJoin(users, eq(tasks.assigneeId, users.id))
+      .leftJoin(assigneeUsers, eq(tasks.assigneeId, assigneeUsers.id))
+      .leftJoin(testerUsers, eq(tasks.testerId, testerUsers.id))
       .where(and(...conditions))
       .orderBy(asc(tasks.status), asc(tasks.sortOrder), desc(tasks.updatedAt)),
     projectIds.length
@@ -99,6 +107,7 @@ export async function GET(request: Request) {
             userId: users.id,
             name: users.name,
             role: projectMembers.role,
+            userRole: users.role,
           })
           .from(projectMembers)
           .innerJoin(users, eq(projectMembers.userId, users.id))
@@ -139,15 +148,30 @@ export async function GET(request: Request) {
       : null;
   };
   const assigneeMap = new Map<string, { id: string; name: string; projectIds: string[] }>();
+  const testerMap = new Map<string, { id: string; name: string; projectIds: string[] }>();
   for (const member of memberRows) {
-    if (member.role === "viewer") continue;
-    const value = assigneeMap.get(member.userId) ?? {
-      id: member.userId,
-      name: member.name,
-      projectIds: [],
-    };
-    value.projectIds.push(member.projectId);
-    assigneeMap.set(member.userId, value);
+    if (
+      (member.role === "member" || member.role === "manager") &&
+      member.userRole !== "tester" &&
+      member.userRole !== "viewer"
+    ) {
+      const value = assigneeMap.get(member.userId) ?? {
+        id: member.userId,
+        name: member.name,
+        projectIds: [],
+      };
+      value.projectIds.push(member.projectId);
+      assigneeMap.set(member.userId, value);
+    }
+    if (member.role === "tester" && member.userRole === "tester") {
+      const value = testerMap.get(member.userId) ?? {
+        id: member.userId,
+        name: member.name,
+        projectIds: [],
+      };
+      value.projectIds.push(member.projectId);
+      testerMap.set(member.userId, value);
+    }
   }
 
   return NextResponse.json({
@@ -159,6 +183,7 @@ export async function GET(request: Request) {
         projectCode: row.projectCode,
         projectColor: row.projectColor,
         assigneeName: row.assigneeName,
+        testerName: row.testerName,
         overdue: row.overdue,
         canEdit: canEditTask(currentUser, access, row.task),
         canManageProject: canManageProject(currentUser, access),
@@ -182,6 +207,9 @@ export async function GET(request: Request) {
       }),
     })),
     assignees: [...assigneeMap.values()],
+    testers: [...testerMap.values()],
+    currentUserId: currentUser.id,
+    currentUserRole: currentUser.role,
     canCreate: projectRows.some((project) =>
       canContributeToProject(currentUser, accessForProject(project.id)),
     ),
@@ -190,7 +218,7 @@ export async function GET(request: Request) {
 }
 
 /**
- * 创建任务并保证项目、迭代、负责人和当前用户的项目关系有效。
+ * 创建任务并保证项目、迭代、开发负责人、测试负责人和当前用户的项目关系有效。
  *
  * @param request 当前创建任务请求。
  * @return 创建后的任务记录。
@@ -214,6 +242,8 @@ export async function POST(request: Request) {
   const priority = isTaskPriority(body.priority) ? body.priority : "medium";
   const assigneeId =
     typeof body.assigneeId === "string" && body.assigneeId ? body.assigneeId : null;
+  const requestedTesterId =
+    typeof body.testerId === "string" && body.testerId ? body.testerId : null;
   const sprintId = typeof body.sprintId === "string" && body.sprintId ? body.sprintId : null;
   const dueDate = parseDate(body.dueDate);
   const estimateHours = safeHours(body.estimateHours);
@@ -226,6 +256,17 @@ export async function POST(request: Request) {
   if (!canContributeToProject(currentUser, access)) {
     return apiError("无权在该项目中创建任务。", 403);
   }
+  if (
+    requestedTesterId &&
+    !canManageProject(currentUser, access) &&
+    requestedTesterId !== currentUser.id
+  ) {
+    return apiError("只有项目负责人可以指派其他测试负责人。", 403);
+  }
+  const testerId =
+    currentUser.role === "tester" && !canManageProject(currentUser, access)
+      ? currentUser.id
+      : requestedTesterId;
 
   const settings = (await getWorkspaceSettings()) ?? defaultWorkspaceSettings;
   if (settings.requireEstimate && estimateHours <= 0) {
@@ -243,11 +284,30 @@ export async function POST(request: Request) {
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, assigneeId),
           eq(users.status, "active"),
-          sql`${projectMembers.role} <> 'viewer'`,
+          sql`${projectMembers.role} in ('manager', 'member')`,
+          sql`${users.role} not in ('tester', 'viewer')`,
         ),
       )
       .limit(1);
     if (!assignee) return apiError("任务负责人必须是该项目的有效成员。");
+  }
+
+  if (testerId) {
+    const [tester] = await db
+      .select({ id: users.id })
+      .from(projectMembers)
+      .innerJoin(users, eq(projectMembers.userId, users.id))
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, testerId),
+          eq(projectMembers.role, "tester"),
+          eq(users.role, "tester"),
+          eq(users.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!tester) return apiError("测试负责人必须是该项目的有效测试人员。");
   }
 
   if (sprintId) {
@@ -274,6 +334,7 @@ export async function POST(request: Request) {
         status,
         priority,
         assigneeId,
+        testerId,
         reporterId: currentUser.id,
         estimateHours,
         actualHours: 0,

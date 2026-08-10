@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq, gte, sql } from "drizzle-orm";
+import { and, count, countDistinct, eq, gte, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
@@ -146,9 +146,18 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   const { password, ...fields } = parsed.data;
   const passwordHash = password ? await hashPassword(password) : null;
-  const willLoseWriteAccess =
-    (fields.status && fields.status !== "active") || fields.role === "viewer";
-  if (willLoseWriteAccess) {
+  const willLoseProjectOwnership =
+    (fields.status && fields.status !== "active") ||
+    fields.role === "viewer" ||
+    fields.role === "tester";
+  const willLoseDeveloperAssignments =
+    (fields.status && fields.status !== "active") ||
+    fields.role === "viewer" ||
+    fields.role === "tester";
+  const willLoseTesterAssignments =
+    (fields.status && fields.status !== "active") ||
+    (Boolean(fields.role) && fields.role !== "tester");
+  if (willLoseProjectOwnership) {
     const [ownedActiveProjects] = await db
       .select({ value: count() })
       .from(projects)
@@ -169,11 +178,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         })
         .where(eq(users.id, id))
         .returning();
-      if (willLoseWriteAccess) {
+      if (willLoseDeveloperAssignments) {
         await tx
           .update(tasks)
           .set({ assigneeId: null, updatedAt: new Date() })
           .where(eq(tasks.assigneeId, id));
+      }
+      if (willLoseTesterAssignments) {
+        await tx
+          .update(tasks)
+          .set({ testerId: null, updatedAt: new Date() })
+          .where(eq(tasks.testerId, id));
       }
       if (passwordHash || (fields.status && fields.status !== "active")) {
         await tx.delete(sessions).where(eq(sessions.userId, id));
@@ -183,6 +198,11 @@ export async function PATCH(request: Request, context: RouteContext) {
           .update(projectMembers)
           .set({ role: "viewer", updatedAt: new Date() })
           .where(eq(projectMembers.userId, id));
+      } else if (fields.role === "tester") {
+        await tx
+          .update(projectMembers)
+          .set({ role: "tester", updatedAt: new Date() })
+          .where(eq(projectMembers.userId, id));
       } else if (fields.role) {
         await tx
           .update(projectMembers)
@@ -190,7 +210,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           .where(
             and(
               eq(projectMembers.userId, id),
-              eq(projectMembers.role, "viewer"),
+              inArray(projectMembers.role, ["viewer", "tester"]),
             ),
           );
       }

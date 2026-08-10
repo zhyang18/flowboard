@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "@/db";
 import { projects, tasks, users } from "@/db/schema";
 import { projectVisibilityCondition } from "@/lib/authorization";
@@ -23,6 +24,9 @@ import {
 
 export const metadata: Metadata = { title: "工作台" };
 export const dynamic = "force-dynamic";
+
+const assigneeUsers = alias(users, "workbench_assignee_users");
+const testerUsers = alias(users, "workbench_tester_users");
 
 /**
  * 将项目日期格式化为简短中文日期。
@@ -64,12 +68,14 @@ export default async function WorkbenchPage() {
         projectName: projects.name,
         projectCode: projects.code,
         projectColor: projects.color,
-        assigneeName: users.name,
+        assigneeName: assigneeUsers.name,
+        testerName: testerUsers.name,
         overdue: sql<boolean>`${tasks.status} <> 'done' and ${tasks.dueDate} < now()`,
       })
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .leftJoin(users, eq(tasks.assigneeId, users.id))
+      .leftJoin(assigneeUsers, eq(tasks.assigneeId, assigneeUsers.id))
+      .leftJoin(testerUsers, eq(tasks.testerId, testerUsers.id))
       .where(
         and(
           eq(projects.archived, false),
@@ -223,7 +229,7 @@ export default async function WorkbenchPage() {
             <span className="header-count">{focusTasks.length} 项</span>
           </header>
           <div className="focus-list">
-            {focusTasks.length ? focusTasks.map(({ task, projectName, projectCode, projectColor, assigneeName }) => {
+            {focusTasks.length ? focusTasks.map(({ task, projectName, projectCode, projectColor, assigneeName, testerName }) => {
               const remaining = Math.max(0, task.estimateHours - task.actualHours);
               const overrun = task.actualHours > task.estimateHours && task.estimateHours > 0;
               return (
@@ -235,7 +241,7 @@ export default async function WorkbenchPage() {
                     </small>
                     <b>{task.title}</b>
                     <footer>
-                      <span>{assigneeName ?? "待认领"}</span>
+                      <span>开发 {assigneeName ?? "待认领"} · 测试 {testerName ?? "待指派"}</span>
                       <span className={overrun ? "risk" : ""}>
                         {overrun ? `超出 ${(task.actualHours - task.estimateHours).toFixed(1)}h` : `剩余 ${remaining.toFixed(1)}h`}
                       </span>

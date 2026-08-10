@@ -70,6 +70,7 @@ export async function GET() {
             sprintId: tasks.sprintId,
             title: tasks.title,
             status: tasks.status,
+            testerId: tasks.testerId,
             estimateHours: tasks.estimateHours,
             actualHours: tasks.actualHours,
           })
@@ -116,6 +117,7 @@ export async function GET() {
         canManage: canManageProject(currentUser, accessForProject(sprint.projectId)),
         taskCount: sprintTasks.length,
         completedTaskCount: done,
+        testedTaskCount: sprintTasks.filter((task) => Boolean(task.testerId)).length,
         progress: sprintTasks.length ? Math.round((done / sprintTasks.length) * 100) : 0,
         estimateHours: Math.round(estimate * 10) / 10,
         actualHours: Math.round(actual * 10) / 10,

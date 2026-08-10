@@ -27,6 +27,7 @@ type SprintTask = {
   sprintId: string | null;
   title: string;
   status: TaskStatus;
+  testerId: string | null;
   estimateHours: number;
   actualHours: number;
 };
@@ -45,6 +46,7 @@ type SprintRecord = {
   endDate: string;
   taskCount: number;
   completedTaskCount: number;
+  testedTaskCount: number;
   progress: number;
   estimateHours: number;
   actualHours: number;
@@ -59,7 +61,7 @@ type ProjectOption = {
   color: string;
   canManage: boolean;
 };
-type CandidateTask = SprintTask & { projectId: string };
+type CandidateTask = SprintTask & { projectId: string; testerName: string | null };
 type SprintForm = {
   projectId: string;
   name: string;
@@ -420,6 +422,7 @@ export default function SprintManagement() {
                   <span><small>容量</small><b>{sprint.capacityHours.toFixed(1)}h</b></span>
                   <span><small>预估</small><b>{sprint.estimateHours.toFixed(1)}h</b></span>
                   <span><small>实际</small><b>{sprint.actualHours.toFixed(1)}h</b></span>
+                  <span><small>测试覆盖</small><b>{sprint.testedTaskCount}/{sprint.taskCount}</b></span>
                 </div>
                 {sprint.canManage && (
                   <footer>
@@ -480,7 +483,7 @@ export default function SprintManagement() {
                     checked={selectedTaskIds.includes(task.id)}
                     onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))}
                   />
-                  <span><b>{task.title}</b><small>{taskStatusLabels[task.status]} · 预估 {task.estimateHours.toFixed(1)}h</small></span>
+                  <span><b>{task.title}</b><small>{taskStatusLabels[task.status]} · 预估 {task.estimateHours.toFixed(1)}h · 测试 {task.testerName ?? "待指派"}</small></span>
                 </label>
               ))}
             </div>

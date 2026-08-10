@@ -19,6 +19,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "super_admin",
   "project_admin",
   "member",
+  "tester",
   "viewer",
 ]);
 
@@ -59,6 +60,7 @@ export const sprintStatusEnum = pgEnum("sprint_status", [
 export const projectMemberRoleEnum = pgEnum("project_member_role", [
   "manager",
   "member",
+  "tester",
   "viewer",
 ]);
 
@@ -241,6 +243,9 @@ export const tasks = pgTable(
     assigneeId: uuid("assignee_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    testerId: uuid("tester_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     reporterId: uuid("reporter_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -265,6 +270,7 @@ export const tasks = pgTable(
       table.sortOrder,
     ),
     index("tasks_assignee_idx").on(table.assigneeId),
+    index("tasks_tester_idx").on(table.testerId),
     index("tasks_due_date_idx").on(table.dueDate),
     check("tasks_estimate_hours_check", sql`${table.estimateHours} >= 0`),
     check("tasks_actual_hours_check", sql`${table.actualHours} >= 0`),

@@ -11,6 +11,8 @@ import {
   Users2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { UserRole } from "@/db/schema";
+import { roleLabels } from "@/lib/users";
 
 type ReportData = {
   period: number;
@@ -23,6 +25,8 @@ type ReportData = {
     actualHours: number;
     deviation: number;
     loggedHours: number;
+    testingTaskCount: number;
+    awaitingTesterCount: number;
   };
   projectDelivery: Array<{
     id: string;
@@ -31,6 +35,8 @@ type ReportData = {
     color: string;
     total: number;
     completed: number;
+    testingTaskCount: number;
+    awaitingTesterCount: number;
     progress: number;
     estimateHours: number;
     actualHours: number;
@@ -39,6 +45,7 @@ type ReportData = {
   memberLoad: Array<{
     id: string;
     name: string;
+    role: UserRole;
     hours: number;
     projectCount: number;
     utilization: number;
@@ -115,12 +122,14 @@ export default function ReportsDashboard() {
   function exportCsv() {
     if (!data) return;
     const rows = [
-      ["项目代号", "项目名称", "任务总数", "已完成", "完成率", "预估工时", "实际工时", "偏差"],
+      ["项目代号", "项目名称", "任务总数", "已完成", "测试已指派", "评审待指派测试", "完成率", "预估工时", "实际工时", "偏差"],
       ...data.projectDelivery.map((project) => [
         project.code,
         project.name,
         project.total,
         project.completed,
+        project.testingTaskCount,
+        project.awaitingTesterCount,
         `${project.progress}%`,
         project.estimateHours,
         project.actualHours,
@@ -146,7 +155,7 @@ export default function ReportsDashboard() {
         <div>
           <span className="eyebrow">数据驱动复盘</span>
           <h2>把交付表现变成可行动的洞察</h2>
-          <p>统一观察任务完成、项目偏差、成员投入和阶段趋势。</p>
+          <p>统一观察开发与测试任务完成、项目偏差、成员投入和阶段趋势。</p>
         </div>
         <div className="report-heading-actions">
           <label className="module-select"><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></label>
@@ -162,7 +171,7 @@ export default function ReportsDashboard() {
             <article><span className="metric-icon blue"><FolderKanban size={19} /></span><div><small>项目 / 任务</small><b>{data.stats.projectCount} <i>/ {data.stats.taskCount}</i></b></div><em>当前项目组合</em></article>
             <article><span className="metric-icon green"><CheckCircle2 size={19} /></span><div><small>任务完成率</small><b>{data.stats.completionRate}%</b></div><em>{data.stats.taskCount ? `${Math.round((data.stats.taskCount * data.stats.completionRate) / 100)} 项已完成` : "暂无任务"}</em></article>
             <article><span className="metric-icon violet"><Clock3 size={19} /></span><div><small>实际 / 预估</small><b>{data.stats.actualHours.toFixed(1)}h <i>/ {data.stats.estimateHours.toFixed(1)}h</i></b></div><em className={data.stats.deviation > 10 ? "risk" : ""}>偏差 {data.stats.deviation > 0 ? "+" : ""}{data.stats.deviation}%</em></article>
-            <article><span className="metric-icon orange"><AlertTriangle size={19} /></span><div><small>逾期任务</small><b>{data.stats.overdue}</b></div><em className={data.stats.overdue ? "risk" : ""}>{data.stats.overdue ? "需要关注" : "无逾期风险"}</em></article>
+            <article><span className="metric-icon orange"><AlertTriangle size={19} /></span><div><small>测试覆盖 / 待指派</small><b>{data.stats.testingTaskCount} <i>/ {data.stats.awaitingTesterCount}</i></b></div><em className={data.stats.awaitingTesterCount ? "risk" : ""}>{data.stats.awaitingTesterCount ? "评审任务需补充测试负责人" : `逾期任务 ${data.stats.overdue}`}</em></article>
           </section>
 
           <section className="report-main-grid">
@@ -188,7 +197,7 @@ export default function ReportsDashboard() {
                 {data.projectDelivery.map((project) => (
                   <div key={project.id}>
                     <span className="project-mark" style={{ background: project.color }}>{project.code.slice(0, 2)}</span>
-                    <div><header><b>{project.name}</b><span>{project.completed}/{project.total} · {project.progress}%</span></header><div className="progress-track"><i style={{ width: `${project.progress}%`, background: project.color }} /></div><footer><span>预估 {project.estimateHours.toFixed(1)}h</span><span>实际 {project.actualHours.toFixed(1)}h</span><strong className={project.deviation > 10 ? "risk" : ""}>{project.deviation > 0 ? "+" : ""}{project.deviation}%</strong></footer></div>
+                    <div><header><b>{project.name}</b><span>{project.completed}/{project.total} · {project.progress}%</span></header><div className="progress-track"><i style={{ width: `${project.progress}%`, background: project.color }} /></div><footer><span>预估 {project.estimateHours.toFixed(1)}h</span><span>实际 {project.actualHours.toFixed(1)}h</span><span>测试 {project.testingTaskCount}/{project.total}</span><strong className={project.deviation > 10 ? "risk" : ""}>{project.deviation > 0 ? "+" : ""}{project.deviation}%</strong></footer></div>
                   </div>
                 ))}
               </div>
@@ -197,7 +206,7 @@ export default function ReportsDashboard() {
               <header className="module-card-header"><div><span className="eyebrow">成员负载</span><h3>投入与利用率</h3></div><Users2 size={18} /></header>
               <div className="member-report-list">
                 {data.memberLoad.length ? data.memberLoad.map((member) => (
-                  <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${Math.min(100, member.utilization)}%` }} /></div></div><strong className={member.utilization > 100 ? "risk" : ""}>{member.utilization}%</strong></div>
+                  <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name} · {roleLabels[member.role]}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${Math.min(100, member.utilization)}%` }} /></div></div><strong className={member.utilization > 100 ? "risk" : ""}>{member.utilization}%</strong></div>
                 )) : <div className="module-empty"><Gauge size={24} /> 当前周期暂无成员工时</div>}
               </div>
             </article>

@@ -19,6 +19,8 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import type { UserRole } from "@/db/schema";
+import { roleLabels } from "@/lib/users";
 
 type WorkLogRecord = {
   id: string;
@@ -30,6 +32,7 @@ type WorkLogRecord = {
   projectColor: string;
   userId: string;
   userName: string;
+  userRole: UserRole;
   workDate: string;
   durationHours: number;
   note: string;
@@ -43,8 +46,8 @@ type ProjectOption = {
   canLog: boolean;
   canManage: boolean;
 };
-type UserOption = { id: string; name: string; projectIds: string[] };
-type TaskOption = { id: string; title: string; projectId: string };
+type UserOption = { id: string; name: string; role: UserRole; projectIds: string[] };
+type TaskOption = { id: string; title: string; projectId: string; testerId: string | null };
 type WorkLogForm = {
   projectId: string;
   taskId: string;
@@ -193,12 +196,17 @@ export default function TimeAnalysis() {
       projects.find((project) => project.id === projectId && project.canLog) ??
       projects.find((project) => project.canLog);
     const selectedProjectId = writableProject?.id ?? "";
-    const selectedTask = tasks.find((task) => task.projectId === selectedProjectId);
     const selectedUserId =
       writableProject?.canManage &&
       users.some((user) => user.id === userId && user.projectIds.includes(selectedProjectId))
         ? userId
         : currentUserId;
+    const selectedUser = users.find((user) => user.id === selectedUserId);
+    const selectedTask = tasks.find(
+      (task) =>
+        task.projectId === selectedProjectId &&
+        (selectedUser?.role !== "tester" || task.testerId === selectedUserId),
+    );
     setForm({
       projectId: selectedProjectId,
       taskId: selectedTask?.id ?? "",
@@ -286,7 +294,7 @@ export default function TimeAnalysis() {
       <section className="module-toolbar time-toolbar">
         <label className="module-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务、说明或成员" /></label>
         <label className="module-select"><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">全部项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
-        <label className="module-select"><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+        <label className="module-select"><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}</option>)}</select></label>
         <label className="date-control"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /><span>至</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
       </section>
 
@@ -330,7 +338,7 @@ export default function TimeAnalysis() {
               <tbody>{visibleLogs.map((log) => (
                 <tr key={log.id}>
                   <td><CalendarDays size={13} /> {log.workDate.slice(0, 10)}</td>
-                  <td><span className="avatar">{log.userName.slice(0, 1)}</span>{log.userName}</td>
+                  <td><span className="avatar">{log.userName.slice(0, 1)}</span>{log.userName} · {roleLabels[log.userRole]}</td>
                   <td><small><i style={{ background: log.projectColor }} /> {log.projectCode}</small><b>{log.taskTitle}</b></td>
                   <td>{log.note || "—"}</td>
                   <td><strong>{log.durationHours.toFixed(1)}h</strong></td>
@@ -348,9 +356,9 @@ export default function TimeAnalysis() {
             <header><div><span className="eyebrow">登记工时</span><h2 id="work-log-title">记录实际投入</h2></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button></header>
             <form onSubmit={saveLog}>
               <div className="workspace-form-grid">
-                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; const nextProject = projects.find((project) => project.id === nextProjectId); setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId)?.id ?? "", userId: nextProject?.canManage && users.some((user) => user.id === form.userId && user.projectIds.includes(nextProjectId)) ? form.userId : currentUserId }); }}><option value="">请选择</option>{projects.filter((project) => project.canLog).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
-                <label><span>任务</span><select required value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })}><option value="">请选择</option>{tasks.filter((task) => task.projectId === form.projectId).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select></label>
-                {projects.find((project) => project.id === form.projectId)?.canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>{users.filter((user) => user.projectIds.includes(form.projectId)).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>}
+                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; const nextProject = projects.find((project) => project.id === nextProjectId); const nextUserId = nextProject?.canManage && users.some((user) => user.id === form.userId && user.projectIds.includes(nextProjectId)) ? form.userId : currentUserId; const nextUser = users.find((user) => user.id === nextUserId); setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId && (nextUser?.role !== "tester" || task.testerId === nextUserId))?.id ?? "", userId: nextUserId }); }}><option value="">请选择</option>{projects.filter((project) => project.canLog).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
+                <label><span>任务</span><select required value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })}><option value="">请选择</option>{tasks.filter((task) => task.projectId === form.projectId && (users.find((user) => user.id === form.userId)?.role !== "tester" || task.testerId === form.userId)).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select></label>
+                {projects.find((project) => project.id === form.projectId)?.canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => { const nextUserId = e.target.value; setForm({ ...form, userId: nextUserId, taskId: tasks.some((task) => task.id === form.taskId && (users.find((user) => user.id === nextUserId)?.role !== "tester" || task.testerId === nextUserId)) ? form.taskId : "" }); }}>{users.filter((user) => user.projectIds.includes(form.projectId)).map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}</option>)}</select></label>}
                 <label><span>工作日期</span><input required type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} /></label>
                 <label><span>实际工时（小时）</span><input required type="number" min="0.1" max="24" step="0.5" value={form.durationHours} onChange={(e) => setForm({ ...form, durationHours: Number(e.target.value) })} /></label>
                 <label className="form-wide"><span>工作说明</span><textarea rows={4} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="简要说明完成了什么、遇到什么问题。" /></label>

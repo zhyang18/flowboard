@@ -269,7 +269,7 @@ textarea {
 
 .showcase-metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin: 12px 0 9px;
 }
@@ -1359,6 +1359,11 @@ textarea {
 .role-member {
   background: var(--green-100);
   color: var(--green-700);
+}
+
+.role-tester {
+  background: var(--violet-100);
+  color: var(--violet-700);
 }
 
 .status-chip i {
@@ -3528,6 +3533,20 @@ textarea {
   color: white;
   font-size: 8px;
   font-weight: 800;
+}
+
+.task-people {
+  display: flex;
+  align-items: center;
+}
+
+.task-people .task-assignee + .task-assignee {
+  margin-left: -6px;
+  border: 2px solid white;
+}
+
+.task-tester {
+  background: linear-gradient(145deg, #8b6cf6, #5a35c9);
 }
 
 .completed-time {

@@ -100,7 +100,7 @@ export function canManageProject(
   user: Pick<CurrentUser, "id" | "role">,
   access: ProjectAccess | null,
 ): boolean {
-  if (!access || user.role === "viewer") return false;
+  if (!access || user.role === "viewer" || user.role === "tester") return false;
   return (
     user.role === "super_admin" ||
     access.ownerId === user.id ||
@@ -132,17 +132,18 @@ export function canContributeToProject(
  *
  * @param user 当前登录用户。
  * @param access 任务所属项目的访问关系。
- * @param task 任务的负责人和创建人信息。
+ * @param task 任务的开发负责人、测试负责人和创建人信息。
  * @return 可以编辑任务时返回 true。
  */
 export function canEditTask(
   user: Pick<CurrentUser, "id" | "role">,
   access: ProjectAccess | null,
-  task: { assigneeId: string | null; reporterId: string },
+  task: { assigneeId: string | null; testerId: string | null; reporterId: string },
 ): boolean {
   if (canManageProject(user, access)) return true;
+  if (!canContributeToProject(user, access)) return false;
+  if (user.role === "tester") return task.testerId === user.id;
   return (
-    canContributeToProject(user, access) &&
-    (task.assigneeId === user.id || task.reporterId === user.id)
+    task.assigneeId === user.id || task.reporterId === user.id
   );
 }

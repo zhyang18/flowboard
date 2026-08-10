@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { projects, tasks, users, workLogs } from "@/db/schema";
+import { projects, tasks, users, workLogs, type UserRole } from "@/db/schema";
 import { projectVisibilityCondition } from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import {
@@ -66,6 +66,7 @@ export async function GET(request: Request) {
             id: workLogs.id,
             userId: workLogs.userId,
             userName: users.name,
+            userRole: users.role,
             projectId: projects.id,
             durationHours: workLogs.durationHours,
             workDate: workLogs.workDate,
@@ -104,6 +105,10 @@ export async function GET(request: Request) {
       color: project.color,
       total: rows.length,
       completed,
+      testingTaskCount: rows.filter(({ task }) => Boolean(task.testerId)).length,
+      awaitingTesterCount: rows.filter(
+        ({ task }) => task.status === "review" && !task.testerId,
+      ).length,
       progress: rows.length ? Math.round((completed / rows.length) * 100) : 0,
       estimateHours: Math.round(projectEstimate * 10) / 10,
       actualHours: Math.round(projectActual * 10) / 10,
@@ -116,12 +121,13 @@ export async function GET(request: Request) {
 
   const memberMap = new Map<
     string,
-    { id: string; name: string; hours: number; projects: Set<string> }
+    { id: string; name: string; role: UserRole; hours: number; projects: Set<string> }
   >();
   for (const log of logRows) {
     const value = memberMap.get(log.userId) ?? {
       id: log.userId,
       name: log.userName,
+      role: log.userRole,
       hours: 0,
       projects: new Set<string>(),
     };
@@ -134,6 +140,7 @@ export async function GET(request: Request) {
     .map((member) => ({
       id: member.id,
       name: member.name,
+      role: member.role,
       hours: Math.round(member.hours * 10) / 10,
       projectCount: member.projects.size,
       utilization: Math.round((member.hours / availableHours) * 100),
@@ -158,6 +165,10 @@ export async function GET(request: Request) {
       deviation: estimate > 0 ? Math.round(((actual - estimate) / estimate) * 100) : 0,
       loggedHours:
         Math.round(logRows.reduce((sum, log) => sum + log.durationHours, 0) * 10) / 10,
+      testingTaskCount: taskRows.filter(({ task }) => Boolean(task.testerId)).length,
+      awaitingTesterCount: taskRows.filter(
+        ({ task }) => task.status === "review" && !task.testerId,
+      ).length,
     },
     projectDelivery,
     memberLoad,

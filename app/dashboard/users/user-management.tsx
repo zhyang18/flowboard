@@ -112,6 +112,12 @@ const roleCards: Array<{
     permissions: [false, false, true, false, false, false],
   },
   {
+    role: "tester",
+    description: "负责迭代验证、任务验收并登记测试工时",
+    tone: "violet",
+    permissions: [false, false, true, false, false, false],
+  },
+  {
     role: "viewer",
     description: "查看获授权的项目与公开报表",
     tone: "gray",
@@ -456,7 +462,7 @@ export default function UserManagement({
           type="button"
           onClick={() => setTab("roles")}
         >
-          <KeyRound size={16} /> 角色与权限 <span>4</span>
+          <KeyRound size={16} /> 角色与权限 <span>5</span>
         </button>
       </div>
 
@@ -855,10 +861,10 @@ export default function UserManagement({
                   <input
                     type="password"
                     autoComplete="new-password"
-                    minLength={8}
+                    minLength={10}
                     value={form.password}
                     onChange={(event) => setForm({ ...form, password: event.target.value })}
-                    placeholder={modalMode === "edit" ? "留空表示不修改" : "至少 8 个字符"}
+                    placeholder={modalMode === "edit" ? "留空表示不修改" : "至少 10 个字符"}
                     required={modalMode === "create" && form.status === "active"}
                   />
                 </label>
@@ -891,6 +897,7 @@ export default function UserManagement({
                       <option value="project_admin">项目管理员</option>
                     )}
                     <option value="member">研发成员</option>
+                    <option value="tester">测试人员</option>
                     <option value="viewer">只读访客</option>
                   </select>
                 </label>

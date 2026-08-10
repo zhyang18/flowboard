@@ -18,6 +18,7 @@ import {
   tasks,
   users,
   workLogs,
+  type UserRole,
 } from "@/db/schema";
 import {
   canContributeToProject,
@@ -105,6 +106,7 @@ export async function GET(request: Request) {
         projectColor: projects.color,
         userId: workLogs.userId,
         userName: users.name,
+        userRole: users.role,
         workDate: workLogs.workDate,
         durationHours: workLogs.durationHours,
         note: workLogs.note,
@@ -123,6 +125,7 @@ export async function GET(request: Request) {
             userId: users.id,
             name: users.name,
             role: projectMembers.role,
+            userRole: users.role,
           })
           .from(projectMembers)
           .innerJoin(users, eq(projectMembers.userId, users.id))
@@ -136,7 +139,12 @@ export async function GET(request: Request) {
       : Promise.resolve([]),
     activeProjectIds.length
       ? db
-          .select({ id: tasks.id, title: tasks.title, projectId: tasks.projectId })
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            projectId: tasks.projectId,
+            testerId: tasks.testerId,
+          })
           .from(tasks)
           .where(inArray(tasks.projectId, activeProjectIds))
           .orderBy(asc(tasks.title))
@@ -171,12 +179,16 @@ export async function GET(request: Request) {
       },
     ]),
   );
-  const userMap = new Map<string, { id: string; name: string; projectIds: string[] }>();
+  const userMap = new Map<
+    string,
+    { id: string; name: string; role: UserRole; projectIds: string[] }
+  >();
   for (const member of memberRows) {
     if (member.role === "viewer") continue;
     const value = userMap.get(member.userId) ?? {
       id: member.userId,
       name: member.name,
+      role: member.userRole,
       projectIds: [],
     };
     value.projectIds.push(member.projectId);
@@ -254,7 +266,12 @@ export async function POST(request: Request) {
 
   const db = getDb();
   const [task] = await db
-    .select({ id: tasks.id, projectId: tasks.projectId, archived: projects.archived })
+    .select({
+      id: tasks.id,
+      projectId: tasks.projectId,
+      testerId: tasks.testerId,
+      archived: projects.archived,
+    })
     .from(tasks)
     .innerJoin(projects, eq(tasks.projectId, projects.id))
     .where(eq(tasks.id, taskId))
@@ -270,7 +287,7 @@ export async function POST(request: Request) {
   }
 
   const [targetUser] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, role: users.role })
     .from(projectMembers)
     .innerJoin(users, eq(projectMembers.userId, users.id))
     .where(
@@ -283,6 +300,9 @@ export async function POST(request: Request) {
     )
     .limit(1);
   if (!targetUser) return apiError("工时成员必须是该项目的有效成员。");
+  if (targetUser.role === "tester" && task.testerId !== requestedUserId) {
+    return apiError("测试人员只能在自己负责验收的任务中登记工时。", 403);
+  }
 
   const [dailyTotal] = await db
     .select({ hours: sql<number>`coalesce(sum(${workLogs.durationHours}), 0)` })
