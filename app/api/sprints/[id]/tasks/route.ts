@@ -38,7 +38,11 @@ export async function PUT(request: Request, context: RouteContext) {
   const [sprint] = await db.select().from(sprints).where(eq(sprints.id, id)).limit(1);
   if (!sprint) return apiError("迭代不存在。", 404);
   const access = await getProjectAccess(currentUser, sprint.projectId);
+  if (!access || access.archived) return apiError("迭代不存在。", 404);
   if (!canManageProject(currentUser, access)) return apiError("无权规划迭代任务。", 403);
+  if (sprint.status === "completed") {
+    return apiError("已完成迭代为历史快照，请先重新打开后再调整任务范围。", 409);
+  }
 
   if (taskIds.length) {
     const selected = await db

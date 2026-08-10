@@ -10,6 +10,7 @@ import {
   workLogs,
 } from "@/db/schema";
 import {
+  canApproveTaskCompletion,
   canEditTask,
   canManageProject,
   getProjectAccess,
@@ -62,6 +63,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     return apiError("无权编辑该任务。", 403);
   }
   const managesExistingProject = canManageProject(currentUser, existingAccess);
+  if (currentUser.role === "tester" && !managesExistingProject) {
+    const unsupportedFields = Object.keys(body).filter((field) => field !== "status");
+    if (unsupportedFields.length > 0) {
+      return apiError("测试人员只能更新自己负责验收任务的状态。", 403);
+    }
+  }
 
   const requestedProjectId =
     typeof body.projectId === "string" && body.projectId ? body.projectId : existing.projectId;
@@ -116,7 +123,35 @@ export async function PATCH(request: Request, context: RouteContext) {
     return apiError("只有项目负责人可以调整任务迭代。", 403);
   }
 
-  if (assigneeId) {
+  const status = isTaskStatus(body.status) ? body.status : existing.status;
+  if (
+    existing.status === "done" &&
+    status === "done" &&
+    testerId !== existing.testerId
+  ) {
+    return apiError("已完成任务需先重新打开，才能调整测试负责人。", 409);
+  }
+  if (status === "done" && existing.status !== "done" && testerId) {
+    if (existing.status !== "review") {
+      return apiError("已指派测试负责人的任务必须先进入待评审。", 409);
+    }
+    if (
+      !canApproveTaskCompletion(currentUser, targetAccess, {
+        assigneeId,
+        testerId,
+        reporterId: existing.reporterId,
+      })
+    ) {
+      return apiError("该任务应由指派的测试负责人验收完成。", 403);
+    }
+  }
+
+  if (
+    assigneeId &&
+    (status !== "done" ||
+      assigneeId !== existing.assigneeId ||
+      requestedProjectId !== existing.projectId)
+  ) {
     const [assignee] = await db
       .select({ id: users.id })
       .from(projectMembers)
@@ -133,7 +168,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       .limit(1);
     if (!assignee) return apiError("任务负责人必须是该项目的有效成员。");
   }
-  if (testerId) {
+  if (
+    testerId &&
+    (status !== "done" ||
+      testerId !== existing.testerId ||
+      requestedProjectId !== existing.projectId)
+  ) {
     const [tester] = await db
       .select({ id: users.id })
       .from(projectMembers)
@@ -163,7 +203,6 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!title) return apiError("任务标题不能为空。");
   const dueDate = "dueDate" in body ? parseDate(body.dueDate) : existing.dueDate;
   if (dueDate === undefined) return apiError("截止日期格式无效。");
-  const status = isTaskStatus(body.status) ? body.status : existing.status;
   const estimateHours =
     "estimateHours" in body ? safeHours(body.estimateHours) : existing.estimateHours;
   const settings = (await getWorkspaceSettings()) ?? defaultWorkspaceSettings;
@@ -242,7 +281,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   const [existing] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   if (!existing) return apiError("任务不存在。", 404);
   const access = await getProjectAccess(currentUser, existing.projectId);
-  if (!access) return apiError("任务不存在。", 404);
+  if (!access || access.archived) return apiError("任务不存在。", 404);
   if (!canManageProject(currentUser, access) && existing.reporterId !== currentUser.id) {
     return apiError("只能删除自己创建的任务。", 403);
   }

@@ -38,7 +38,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     .limit(1);
   if (!existing) return apiError("工时记录不存在。", 404);
   const access = await getProjectAccess(currentUser, existing.projectId);
-  if (!access) return apiError("工时记录不存在。", 404);
+  if (!access || access.archived) return apiError("归档项目的工时历史不能修改。", 409);
   if (existing.userId !== currentUser.id && !canManageProject(currentUser, access)) {
     return apiError("无权删除该工时记录。", 403);
   }

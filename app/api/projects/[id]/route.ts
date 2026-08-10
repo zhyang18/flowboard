@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, notInArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
@@ -138,6 +138,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         .where(
           and(
             eq(tasks.projectId, id),
+            ne(tasks.status, "done"),
             isNotNull(tasks.assigneeId),
             developerIds.length
               ? notInArray(tasks.assigneeId, developerIds)
@@ -150,6 +151,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         .where(
           and(
             eq(tasks.projectId, id),
+            ne(tasks.status, "done"),
             isNotNull(tasks.testerId),
             testerIds.length
               ? notInArray(tasks.testerId, testerIds)

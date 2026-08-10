@@ -107,6 +107,7 @@ export async function GET(request: Request) {
         userId: workLogs.userId,
         userName: users.name,
         userRole: users.role,
+        userStatus: users.status,
         workDate: workLogs.workDate,
         durationHours: workLogs.durationHours,
         note: workLogs.note,
@@ -181,7 +182,7 @@ export async function GET(request: Request) {
   );
   const userMap = new Map<
     string,
-    { id: string; name: string; role: UserRole; projectIds: string[] }
+    { id: string; name: string; role: UserRole; active: boolean; projectIds: string[] }
   >();
   for (const member of memberRows) {
     if (member.role === "viewer") continue;
@@ -189,10 +190,22 @@ export async function GET(request: Request) {
       id: member.userId,
       name: member.name,
       role: member.userRole,
+      active: true,
       projectIds: [],
     };
     value.projectIds.push(member.projectId);
     userMap.set(member.userId, value);
+  }
+  for (const row of rows) {
+    const value = userMap.get(row.userId) ?? {
+      id: row.userId,
+      name: row.userName,
+      role: row.userRole,
+      active: row.userStatus === "active",
+      projectIds: [],
+    };
+    if (!value.projectIds.includes(row.projectId)) value.projectIds.push(row.projectId);
+    userMap.set(row.userId, value);
   }
 
   return NextResponse.json({
@@ -201,23 +214,29 @@ export async function GET(request: Request) {
       workDate: row.workDate.toISOString(),
       createdAt: row.createdAt.toISOString(),
       canDelete:
-        row.userId === currentUser.id ||
-        canManageProject(currentUser, accessMap.get(row.projectId) ?? null),
+        !accessMap.get(row.projectId)?.archived &&
+        (row.userId === currentUser.id ||
+          canManageProject(currentUser, accessMap.get(row.projectId) ?? null)),
     })),
-    projects: activeProjectRows.map(({ ownerId, archived, ...project }) => ({
+    projects: visibleProjectRows.map(({ ownerId, archived, ...project }) => ({
       ...project,
-      canLog: canContributeToProject(currentUser, {
-        projectId: project.id,
-        ownerId,
-        archived,
-        memberRole: membershipMap.get(project.id) ?? null,
-      }),
-      canManage: canManageProject(currentUser, {
-        projectId: project.id,
-        ownerId,
-        archived,
-        memberRole: membershipMap.get(project.id) ?? null,
-      }),
+      archived,
+      canLog:
+        !archived &&
+        canContributeToProject(currentUser, {
+          projectId: project.id,
+          ownerId,
+          archived,
+          memberRole: membershipMap.get(project.id) ?? null,
+        }),
+      canManage:
+        !archived &&
+        canManageProject(currentUser, {
+          projectId: project.id,
+          ownerId,
+          archived,
+          memberRole: membershipMap.get(project.id) ?? null,
+        }),
     })),
     users: [...userMap.values()],
     tasks: taskRows,

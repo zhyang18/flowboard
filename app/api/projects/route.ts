@@ -87,6 +87,7 @@ export async function GET() {
             userId: users.id,
             name: users.name,
             role: projectMembers.role,
+            status: users.status,
           })
           .from(projectMembers)
           .innerJoin(users, eq(projectMembers.userId, users.id))
@@ -108,9 +109,8 @@ export async function GET() {
           )
       : Promise.resolve([]),
     db
-      .select({ id: users.id, name: users.name, role: users.role })
+      .select({ id: users.id, name: users.name, role: users.role, status: users.status })
       .from(users)
-      .where(eq(users.status, "active"))
       .orderBy(asc(users.name)),
   ]);
 
@@ -144,6 +144,10 @@ export async function GET() {
       memberRole: currentMembershipMap.get(project.id) ?? null,
     }),
   );
+  const memberUserIds = new Set(memberRows.map((member) => member.userId));
+  const selectablePeople = peopleRows.filter(
+    (person) => person.status === "active" || memberUserIds.has(person.id),
+  );
 
   return NextResponse.json({
     data: projectRows.map(({ project, ownerName, overdue }) => {
@@ -159,7 +163,12 @@ export async function GET() {
         ...serializeProject(project),
         ownerName,
         overdue,
-        members: members.map(({ userId, name, role }) => ({ id: userId, name, role })),
+        members: members.map(({ userId, name, role, status }) => ({
+          id: userId,
+          name,
+          role,
+          status,
+        })),
         memberIds: members.map((member) => member.userId),
         memberCount: members.length,
         testerCount: members.filter((member) => member.role === "tester").length,
@@ -177,9 +186,11 @@ export async function GET() {
       };
     }),
     owners: canCreate || canManageAny
-      ? peopleRows.filter((person) => canOwnProject(person.role))
+      ? selectablePeople.filter(
+          (person) => person.status === "active" && canOwnProject(person.role),
+        )
       : [],
-    people: canCreate || canManageAny ? peopleRows : [],
+    people: canCreate || canManageAny ? selectablePeople : [],
     canCreate,
   });
 }

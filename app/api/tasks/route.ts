@@ -11,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import {
+  canAssignTaskAssignee,
   canContributeToProject,
   canEditTask,
   canManageProject,
@@ -256,6 +257,12 @@ export async function POST(request: Request) {
   if (!canContributeToProject(currentUser, access)) {
     return apiError("无权在该项目中创建任务。", 403);
   }
+  if (!canAssignTaskAssignee(currentUser, access, assigneeId)) {
+    return apiError("只有项目负责人可以给其他研发成员指派任务。", 403);
+  }
+  if (sprintId && !canManageProject(currentUser, access)) {
+    return apiError("只有项目负责人可以将新任务加入迭代。", 403);
+  }
   if (
     requestedTesterId &&
     !canManageProject(currentUser, access) &&
@@ -267,6 +274,9 @@ export async function POST(request: Request) {
     currentUser.role === "tester" && !canManageProject(currentUser, access)
       ? currentUser.id
       : requestedTesterId;
+  if (status === "done" && testerId) {
+    return apiError("已指派测试负责人的任务必须先进入待评审，再由测试人员验收完成。", 409);
+  }
 
   const settings = (await getWorkspaceSettings()) ?? defaultWorkspaceSettings;
   if (settings.requireEstimate && estimateHours <= 0) {

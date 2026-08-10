@@ -35,10 +35,11 @@ async function main(): Promise<void> {
         loggedHours: number;
         taskActualHours: number;
         missingOwnerManagers: number;
+        duplicateActiveSprintGroups: number;
         invalidTaskAssignees: number;
         invalidTaskTesters: number;
-        invalidTaskReporters: number;
-        invalidWorkLogUsers: number;
+        detachedTaskReporters: number;
+        detachedWorkLogUsers: number;
         crossProjectSprintTasks: number;
         taskActualHourMismatches: number;
       }>
@@ -90,12 +91,23 @@ async function main(): Promise<void> {
         ) as "missingOwnerManagers",
         (
           select count(*)::int
+          from (
+            select project_id
+            from sprints
+            where status = 'active'
+            group by project_id
+            having count(*) > 1
+          ) duplicate_active_sprints
+        ) as "duplicateActiveSprintGroups",
+        (
+          select count(*)::int
           from tasks
           left join project_members
             on project_members.project_id = tasks.project_id
             and project_members.user_id = tasks.assignee_id
           left join users on users.id = tasks.assignee_id
           where tasks.assignee_id is not null
+            and tasks.status <> 'done'
             and (
               project_members.user_id is null
               or project_members.role not in ('manager', 'member')
@@ -111,6 +123,7 @@ async function main(): Promise<void> {
             and project_members.user_id = tasks.tester_id
           left join users on users.id = tasks.tester_id
           where tasks.tester_id is not null
+            and tasks.status <> 'done'
             and (
               project_members.user_id is null
               or project_members.role <> 'tester'
@@ -125,7 +138,7 @@ async function main(): Promise<void> {
             on project_members.project_id = tasks.project_id
             and project_members.user_id = tasks.reporter_id
           where project_members.user_id is null
-        ) as "invalidTaskReporters",
+        ) as "detachedTaskReporters",
         (
           select count(*)::int
           from work_logs
@@ -134,7 +147,7 @@ async function main(): Promise<void> {
             on project_members.project_id = tasks.project_id
             and project_members.user_id = work_logs.user_id
           where project_members.user_id is null
-        ) as "invalidWorkLogUsers",
+        ) as "detachedWorkLogUsers",
         (
           select count(*)::int
           from tasks
@@ -161,10 +174,9 @@ async function main(): Promise<void> {
       summary.testerRoleValues === 2 &&
       summary.requiredConstraints === 5 &&
       summary.missingOwnerManagers === 0 &&
+      summary.duplicateActiveSprintGroups === 0 &&
       summary.invalidTaskAssignees === 0 &&
       summary.invalidTaskTesters === 0 &&
-      summary.invalidTaskReporters === 0 &&
-      summary.invalidWorkLogUsers === 0 &&
       summary.crossProjectSprintTasks === 0 &&
       Math.abs(summary.loggedHours - summary.taskActualHours) <= 0.01 &&
       summary.taskActualHourMismatches === 0;

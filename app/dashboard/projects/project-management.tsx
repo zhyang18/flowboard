@@ -21,7 +21,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import type { ProjectStatus } from "@/db/schema";
+import type { ProjectStatus, UserStatus } from "@/db/schema";
 import { projectStatusLabels } from "@/lib/workspace";
 
 type ProjectRecord = {
@@ -47,7 +47,7 @@ type ProjectRecord = {
   overdue: boolean;
 };
 
-type Person = { id: string; name: string; role: string };
+type Person = { id: string; name: string; role: string; status: UserStatus };
 
 type ProjectForm = {
   name: string;
@@ -446,7 +446,9 @@ export default function ProjectManagement() {
                           <input
                             type="checkbox"
                             checked={checked || isOwner}
-                            disabled={isOwner}
+                            disabled={
+                              isOwner || (!checked && person.status !== "active")
+                            }
                             onChange={(event) =>
                               setForm({
                                 ...form,
@@ -456,7 +458,14 @@ export default function ProjectManagement() {
                               })
                             }
                           />
-                          <span>{person.name}</span>
+                          <span>
+                            {person.name}
+                            {person.status === "disabled"
+                              ? "（已停用，请移除）"
+                              : person.status === "invited"
+                                ? "（待激活，请移除）"
+                                : ""}
+                          </span>
                           <small>{isOwner ? "负责人" : person.role === "viewer" ? "只读" : person.role === "tester" ? "测试" : "研发"}</small>
                         </label>
                       );

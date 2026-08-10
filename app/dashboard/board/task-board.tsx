@@ -228,19 +228,27 @@ export default function TaskBoard() {
     const writableProject =
       projects.find((project) => project.id === projectId && project.canCreateTask) ??
       projects.find((project) => project.canCreateTask);
+    const selectedAssignee = assignees.find(
+      (assignee) =>
+        assignee.id === assigneeId &&
+        writableProject &&
+        assignee.projectIds.includes(writableProject.id),
+    );
+    const currentUserAssignee = assignees.find(
+      (assignee) =>
+        assignee.id === currentUserId &&
+        writableProject &&
+        assignee.projectIds.includes(writableProject.id),
+    );
     setEditingId(null);
     setForm({
       ...emptyForm,
       status,
       estimateHours: defaultEstimateHours,
       projectId: writableProject?.id ?? "",
-      assigneeId:
-        assignees.find(
-          (assignee) =>
-            assignee.id === assigneeId &&
-            writableProject &&
-            assignee.projectIds.includes(writableProject.id),
-        )?.id ?? "",
+      assigneeId: writableProject?.canManage
+        ? selectedAssignee?.id ?? ""
+        : currentUserAssignee?.id ?? "",
       testerId:
         currentUserRole === "tester" &&
         testers.some(
@@ -293,10 +301,15 @@ export default function TaskBoard() {
     setSaving(true);
     setError("");
     try {
+      const editingTask = tasks.find((task) => task.id === editingId);
+      const payload =
+        editingTask && currentUserRole === "tester" && !editingTask.canManageProject
+          ? { status: form.status }
+          : form;
       const response = await fetch(editingId ? `/api/tasks/${editingId}` : "/api/tasks", {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "任务保存失败。");
@@ -385,6 +398,12 @@ export default function TaskBoard() {
       setError(deleteError instanceof Error ? deleteError.message : "删除失败。");
     }
   }
+
+  const editingTask = tasks.find((task) => task.id === editingId);
+  const testerStatusOnly = Boolean(
+    editingTask && currentUserRole === "tester" && !editingTask.canManageProject,
+  );
+  const formProject = projects.find((project) => project.id === form.projectId);
 
   return (
     <div className="module-page board-page">
@@ -566,11 +585,11 @@ export default function TaskBoard() {
               <div className="workspace-form-grid">
                 <label className="form-wide">
                   <span>任务标题</span>
-                  <input required maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="清晰描述需要完成的结果" />
+                  <input required disabled={testerStatusOnly} maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="清晰描述需要完成的结果" />
                 </label>
                 <label>
                   <span>所属项目</span>
-                  <select required disabled={Boolean(editingId && !tasks.find((task) => task.id === editingId)?.canManageProject)} value={form.projectId} onChange={(e) => {
+                  <select required disabled={Boolean(editingId && !editingTask?.canManageProject)} value={form.projectId} onChange={(e) => {
                     const nextProjectId = e.target.value;
                     setForm({
                       ...form,
@@ -601,14 +620,17 @@ export default function TaskBoard() {
                 </label>
                 <label>
                   <span>开发负责人</span>
-                  <select disabled={Boolean(editingId && !tasks.find((task) => task.id === editingId)?.canManageProject)} value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
+                  <select disabled={Boolean(editingId && !editingTask?.canManageProject)} value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
                     <option value="">待认领</option>
-                    {assignees.filter((assignee) => assignee.projectIds.includes(form.projectId)).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+                    {assignees.filter((assignee) =>
+                      assignee.projectIds.includes(form.projectId) &&
+                      (formProject?.canManage || assignee.id === currentUserId),
+                    ).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
                   </select>
                 </label>
                 <label>
                   <span>测试负责人</span>
-                  <select disabled={editingId ? !tasks.find((task) => task.id === editingId)?.canManageProject : !projects.find((project) => project.id === form.projectId)?.canManage} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
+                  <select disabled={editingId ? !editingTask?.canManageProject : !formProject?.canManage} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
                     <option value="">待指派</option>
                     {testers.filter((tester) => tester.projectIds.includes(form.projectId)).map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
                   </select>
@@ -621,13 +643,13 @@ export default function TaskBoard() {
                 </label>
                 <label>
                   <span>优先级</span>
-                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
+                  <select disabled={testerStatusOnly} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
                     {Object.entries(taskPriorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
                 <label>
                   <span>预估工时（小时）</span>
-                  <input type="number" min="0" step="0.5" value={form.estimateHours} onChange={(e) => setForm({ ...form, estimateHours: Number(e.target.value) })} />
+                  <input disabled={testerStatusOnly} type="number" min="0" step="0.5" value={form.estimateHours} onChange={(e) => setForm({ ...form, estimateHours: Number(e.target.value) })} />
                 </label>
                 <label>
                   <span>实际工时（小时）</span>
@@ -640,11 +662,11 @@ export default function TaskBoard() {
                 </label>
                 <label>
                   <span>截止日期</span>
-                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                  <input disabled={testerStatusOnly} type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
                 </label>
                 <label className="form-wide">
                   <span>任务说明</span>
-                  <textarea maxLength={1500} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="补充验收标准、背景或注意事项。" />
+                  <textarea disabled={testerStatusOnly} maxLength={1500} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="补充验收标准、背景或注意事项。" />
                 </label>
               </div>
               <div className="time-form-hint">

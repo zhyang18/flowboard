@@ -1,4 +1,14 @@
-import { and, count, countDistinct, eq, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  countDistinct,
+  eq,
+  gte,
+  inArray,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
@@ -182,13 +192,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         await tx
           .update(tasks)
           .set({ assigneeId: null, updatedAt: new Date() })
-          .where(eq(tasks.assigneeId, id));
+          .where(and(eq(tasks.assigneeId, id), ne(tasks.status, "done")));
       }
       if (willLoseTesterAssignments) {
         await tx
           .update(tasks)
           .set({ testerId: null, updatedAt: new Date() })
-          .where(eq(tasks.testerId, id));
+          .where(and(eq(tasks.testerId, id), ne(tasks.status, "done")));
       }
       if (passwordHash || (fields.status && fields.status !== "active")) {
         await tx.delete(sessions).where(eq(sessions.userId, id));
@@ -281,17 +291,25 @@ export async function DELETE(request: Request, context: RouteContext) {
   const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!existing) return apiError("用户不存在。", 404);
   if (existing.status === "active") return apiError("请先停用账号，再执行删除。");
-  const [ownedProjects, reportedTasks, loggedHours] = await Promise.all([
+  const [ownedProjects, reportedTasks, assignedTasks, loggedHours] = await Promise.all([
     db.select({ value: count() }).from(projects).where(eq(projects.ownerId, id)),
     db.select({ value: count() }).from(tasks).where(eq(tasks.reporterId, id)),
+    db
+      .select({ value: count() })
+      .from(tasks)
+      .where(or(eq(tasks.assigneeId, id), eq(tasks.testerId, id))),
     db.select({ value: count() }).from(workLogs).where(eq(workLogs.userId, id)),
   ]);
   if (
     Number(ownedProjects[0]?.value ?? 0) > 0 ||
     Number(reportedTasks[0]?.value ?? 0) > 0 ||
+    Number(assignedTasks[0]?.value ?? 0) > 0 ||
     Number(loggedHours[0]?.value ?? 0) > 0
   ) {
-    return apiError("该账号仍关联项目、创建任务或历史工时，只能保持停用，不能删除。", 409);
+    return apiError(
+      "该账号仍关联项目、任务责任或历史工时，只能保持停用，不能删除。",
+      409,
+    );
   }
 
   await db.transaction(async (tx) => {

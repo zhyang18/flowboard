@@ -21,6 +21,7 @@ async function main(): Promise<void> {
     const [summary] = await sql<
       Array<{
         duplicateSprintGroups: number;
+        duplicateActiveSprintGroups: number;
         invalidSprints: number;
         invalidTasks: number;
         invalidWorkLogs: number;
@@ -38,6 +39,16 @@ async function main(): Promise<void> {
             having count(*) > 1
           ) duplicates
         ) as "duplicateSprintGroups",
+        (
+          select count(*)::int
+          from (
+            select project_id
+            from sprints
+            where status = 'active'
+            group by project_id
+            having count(*) > 1
+          ) duplicate_active_sprints
+        ) as "duplicateActiveSprintGroups",
         (
           select count(*)::int
           from sprints
@@ -58,7 +69,7 @@ async function main(): Promise<void> {
           from projects
           inner join users on users.id = projects.owner_id
           where projects.archived = false
-            and (users.status <> 'active' or users.role = 'viewer')
+            and (users.status <> 'active' or users.role in ('viewer', 'tester'))
         ) as "invalidProjectOwners",
         (
           select count(*)::int
@@ -75,6 +86,7 @@ async function main(): Promise<void> {
 
     const blockers =
       summary.duplicateSprintGroups +
+      summary.duplicateActiveSprintGroups +
       summary.invalidSprints +
       summary.invalidTasks +
       summary.invalidWorkLogs +

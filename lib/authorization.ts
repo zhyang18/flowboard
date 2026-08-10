@@ -100,7 +100,14 @@ export function canManageProject(
   user: Pick<CurrentUser, "id" | "role">,
   access: ProjectAccess | null,
 ): boolean {
-  if (!access || user.role === "viewer" || user.role === "tester") return false;
+  if (
+    !access ||
+    access.archived ||
+    user.role === "viewer" ||
+    user.role === "tester"
+  ) {
+    return false;
+  }
   return (
     user.role === "super_admin" ||
     access.ownerId === user.id ||
@@ -145,5 +152,45 @@ export function canEditTask(
   if (user.role === "tester") return task.testerId === user.id;
   return (
     task.assigneeId === user.id || task.reporterId === user.id
+  );
+}
+
+/**
+ * 判断当前用户在创建任务时能否选择指定开发负责人。
+ *
+ * @param user 当前登录用户。
+ * @param access 任务所属项目的访问关系。
+ * @param assigneeId 待指派的开发负责人 ID，null 表示暂不指派。
+ * @return 项目管理者可任意指派，普通成员只能不指派或指派自己。
+ */
+export function canAssignTaskAssignee(
+  user: Pick<CurrentUser, "id" | "role">,
+  access: ProjectAccess | null,
+  assigneeId: string | null,
+): boolean {
+  return (
+    assigneeId === null ||
+    canManageProject(user, access) ||
+    assigneeId === user.id
+  );
+}
+
+/**
+ * 判断当前用户能否验收带测试负责人的任务并将其置为完成。
+ *
+ * @param user 当前登录用户。
+ * @param access 任务所属项目的访问关系。
+ * @param task 任务的开发、测试和创建人关系。
+ * @return 项目管理者或当前指派的测试负责人可完成验收。
+ */
+export function canApproveTaskCompletion(
+  user: Pick<CurrentUser, "id" | "role">,
+  access: ProjectAccess | null,
+  task: { assigneeId: string | null; testerId: string | null; reporterId: string },
+): boolean {
+  if (!task.testerId) return canEditTask(user, access, task);
+  return (
+    canManageProject(user, access) ||
+    (user.role === "tester" && task.testerId === user.id)
   );
 }

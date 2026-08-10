@@ -36,17 +36,14 @@ export async function GET(request: Request) {
   const from = startOfUtcDay(reportDate);
   from.setUTCDate(from.getUTCDate() - period + 1);
 
-  const projectRows = await db
+  const visibleProjectRows = await db
     .select()
     .from(projects)
-    .where(
-      and(
-        eq(projects.archived, false),
-        projectVisibilityCondition(currentUser, projects.id),
-      ),
-    )
+    .where(projectVisibilityCondition(currentUser, projects.id))
     .orderBy(asc(projects.name));
+  const projectRows = visibleProjectRows.filter((project) => !project.archived);
   const projectIds = projectRows.map((project) => project.id);
+  const visibleProjectIds = visibleProjectRows.map((project) => project.id);
   const [taskRows, logRows] = await Promise.all([
     projectIds.length
       ? db
@@ -60,7 +57,7 @@ export async function GET(request: Request) {
           .innerJoin(projects, eq(tasks.projectId, projects.id))
           .where(inArray(tasks.projectId, projectIds))
       : Promise.resolve([]),
-    projectIds.length
+    visibleProjectIds.length
       ? db
           .select({
             id: workLogs.id,
@@ -77,7 +74,7 @@ export async function GET(request: Request) {
           .innerJoin(projects, eq(tasks.projectId, projects.id))
           .where(
             and(
-              inArray(projects.id, projectIds),
+              inArray(projects.id, visibleProjectIds),
               gte(workLogs.workDate, from),
             ),
           )

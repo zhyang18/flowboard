@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, projectMembers, projects, sprints, tasks } from "@/db/schema";
@@ -10,6 +10,7 @@ import {
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { hasOtherActiveSprint } from "@/lib/sprints";
 import {
   isSprintStatus,
   parseDate,
@@ -175,6 +176,19 @@ export async function POST(request: Request) {
 
   try {
     const created = await getDb().transaction(async (tx) => {
+      if (status === "active") {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`active-sprint:${projectId}`}))`,
+        );
+        const activeSprints = await tx
+          .select({ id: sprints.id })
+          .from(sprints)
+          .where(and(eq(sprints.projectId, projectId), eq(sprints.status, "active")))
+          .limit(2);
+        if (hasOtherActiveSprint(activeSprints.map((sprint) => sprint.id), null)) {
+          throw new Error("ACTIVE_SPRINT_EXISTS");
+        }
+      }
       const [sprint] = await tx
         .insert(sprints)
         .values({ projectId, name, goal, status, capacityHours, startDate, endDate })
@@ -190,6 +204,9 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ data: serializeSprint(created) }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && error.message === "ACTIVE_SPRINT_EXISTS") {
+      return apiError("同一项目只能有一个进行中的迭代。", 409);
+    }
     if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);
     throw error;
   }

@@ -32,10 +32,7 @@ export function getDb() {
       idle_timeout: 20,
       connect_timeout: connectTimeout,
     });
-
-  if (process.env.NODE_ENV !== "production") {
-    globalDatabase.flowboardSql = client;
-  }
+  globalDatabase.flowboardSql = client;
 
   return drizzle(client, { schema });
 }

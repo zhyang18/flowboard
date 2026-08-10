@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, sprints, tasks } from "@/db/schema";
@@ -6,6 +6,7 @@ import { canManageProject, getProjectAccess } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { hasOtherActiveSprint } from "@/lib/sprints";
 import {
   isSprintStatus,
   parseDate,
@@ -39,6 +40,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   const [existing] = await db.select().from(sprints).where(eq(sprints.id, id)).limit(1);
   if (!existing) return apiError("迭代不存在。", 404);
   const existingAccess = await getProjectAccess(currentUser, existing.projectId);
+  if (!existingAccess || existingAccess.archived) return apiError("迭代不存在。", 404);
   if (!canManageProject(currentUser, existingAccess)) return apiError("无权编辑迭代。", 403);
 
   const projectId =
@@ -66,16 +68,33 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (endDate < startDate) return apiError("结束日期不能早于开始日期。");
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
   if (!name) return apiError("迭代名称不能为空。");
+  const status = isSprintStatus(body.status) ? body.status : existing.status;
+  if (existing.status === "completed" && status === "completed") {
+    return apiError("已完成迭代为历史快照，请先重新打开后再修改。", 409);
+  }
 
   try {
     const updated = await db.transaction(async (tx) => {
+      if (status === "active") {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`active-sprint:${projectId}`}))`,
+        );
+        const activeSprints = await tx
+          .select({ id: sprints.id })
+          .from(sprints)
+          .where(and(eq(sprints.projectId, projectId), eq(sprints.status, "active")))
+          .limit(2);
+        if (hasOtherActiveSprint(activeSprints.map((sprint) => sprint.id), id)) {
+          throw new Error("ACTIVE_SPRINT_EXISTS");
+        }
+      }
       const [sprint] = await tx
         .update(sprints)
         .set({
           projectId,
           name,
           goal: "goal" in body ? textValue(body.goal, 500) : existing.goal,
-          status: isSprintStatus(body.status) ? body.status : existing.status,
+          status,
           capacityHours:
             "capacityHours" in body ? safeHours(body.capacityHours) : existing.capacityHours,
           startDate,
@@ -95,6 +114,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     });
     return NextResponse.json({ data: serializeSprint(updated) });
   } catch (error) {
+    if (error instanceof Error && error.message === "ACTIVE_SPRINT_EXISTS") {
+      return apiError("同一项目只能有一个进行中的迭代。", 409);
+    }
     if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);
     throw error;
   }
@@ -116,8 +138,11 @@ export async function DELETE(request: Request, context: RouteContext) {
   const [existing] = await db.select().from(sprints).where(eq(sprints.id, id)).limit(1);
   if (!existing) return apiError("迭代不存在。", 404);
   const access = await getProjectAccess(currentUser, existing.projectId);
+  if (!access || access.archived) return apiError("迭代不存在。", 404);
   if (!canManageProject(currentUser, access)) return apiError("无权删除迭代。", 403);
-  if (existing.status === "active") return apiError("进行中的迭代不能直接删除。");
+  if (existing.status !== "planned") {
+    return apiError("只有尚未开始的迭代可以删除；进行中或已完成迭代需保留历史。", 409);
+  }
 
   await db.transaction(async (tx) => {
     await tx.insert(auditLogs).values({

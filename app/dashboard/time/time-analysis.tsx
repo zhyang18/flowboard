@@ -43,10 +43,17 @@ type ProjectOption = {
   name: string;
   code: string;
   color: string;
+  archived: boolean;
   canLog: boolean;
   canManage: boolean;
 };
-type UserOption = { id: string; name: string; role: UserRole; projectIds: string[] };
+type UserOption = {
+  id: string;
+  name: string;
+  role: UserRole;
+  active: boolean;
+  projectIds: string[];
+};
 type TaskOption = { id: string; title: string; projectId: string; testerId: string | null };
 type WorkLogForm = {
   projectId: string;
@@ -62,6 +69,37 @@ const initialTo = timeReferenceDate.toISOString().slice(0, 10);
 const initialFromDate = new Date(timeReferenceDate);
 initialFromDate.setDate(initialFromDate.getDate() - 29);
 const initialFrom = initialFromDate.toISOString().slice(0, 10);
+
+/**
+ * 为工时表单选择项目内有效成员，兼容未直接加入项目的超级管理员代填场景。
+ *
+ * @param users 当前可见的成员选项。
+ * @param projectId 工时所属项目 ID。
+ * @param currentUserId 当前登录用户 ID。
+ * @param preferredUserId 筛选器或表单中优先保留的成员 ID。
+ * @param canManage 当前用户是否可以代项目成员登记工时。
+ * @return 可提交的成员 ID；项目没有有效成员时返回空字符串。
+ */
+function defaultLogUserId(
+  users: UserOption[],
+  projectId: string,
+  currentUserId: string,
+  preferredUserId: string,
+  canManage: boolean,
+): string {
+  const candidates = users.filter(
+    (user) => user.active && user.projectIds.includes(projectId),
+  );
+  if (canManage) {
+    return (
+      candidates.find((user) => user.id === preferredUserId)?.id ??
+      candidates.find((user) => user.id === currentUserId)?.id ??
+      candidates[0]?.id ??
+      ""
+    );
+  }
+  return candidates.find((user) => user.id === currentUserId)?.id ?? "";
+}
 
 /**
  * 渲染工时筛选、趋势、明细和登记表单。
@@ -196,11 +234,13 @@ export default function TimeAnalysis() {
       projects.find((project) => project.id === projectId && project.canLog) ??
       projects.find((project) => project.canLog);
     const selectedProjectId = writableProject?.id ?? "";
-    const selectedUserId =
-      writableProject?.canManage &&
-      users.some((user) => user.id === userId && user.projectIds.includes(selectedProjectId))
-        ? userId
-        : currentUserId;
+    const selectedUserId = defaultLogUserId(
+      users,
+      selectedProjectId,
+      currentUserId,
+      userId,
+      Boolean(writableProject?.canManage),
+    );
     const selectedUser = users.find((user) => user.id === selectedUserId);
     const selectedTask = tasks.find(
       (task) =>
@@ -293,8 +333,8 @@ export default function TimeAnalysis() {
 
       <section className="module-toolbar time-toolbar">
         <label className="module-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务、说明或成员" /></label>
-        <label className="module-select"><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">全部项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
-        <label className="module-select"><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}</option>)}</select></label>
+        <label className="module-select"><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">全部项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}{project.archived ? "（已归档）" : ""}</option>)}</select></label>
+        <label className="module-select"><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}{user.active ? "" : "（已停用）"}</option>)}</select></label>
         <label className="date-control"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /><span>至</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
       </section>
 
@@ -321,7 +361,7 @@ export default function TimeAnalysis() {
               return (
                 <div className="time-project-row" key={project.id}>
                   <span className="project-mark" style={{ background: project.color }}>{project.code.slice(0, 2)}</span>
-                  <div><header><b>{project.name}</b><span>{hours.toFixed(1)}h · {share}%</span></header><div className="progress-track"><i style={{ width: `${share}%`, background: project.color }} /></div></div>
+                  <div><header><b>{project.name}{project.archived ? "（已归档）" : ""}</b><span>{hours.toFixed(1)}h · {share}%</span></header><div className="progress-track"><i style={{ width: `${share}%`, background: project.color }} /></div></div>
                 </div>
               );
             })}
@@ -356,9 +396,9 @@ export default function TimeAnalysis() {
             <header><div><span className="eyebrow">登记工时</span><h2 id="work-log-title">记录实际投入</h2></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button></header>
             <form onSubmit={saveLog}>
               <div className="workspace-form-grid">
-                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; const nextProject = projects.find((project) => project.id === nextProjectId); const nextUserId = nextProject?.canManage && users.some((user) => user.id === form.userId && user.projectIds.includes(nextProjectId)) ? form.userId : currentUserId; const nextUser = users.find((user) => user.id === nextUserId); setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId && (nextUser?.role !== "tester" || task.testerId === nextUserId))?.id ?? "", userId: nextUserId }); }}><option value="">请选择</option>{projects.filter((project) => project.canLog).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
+                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; const nextProject = projects.find((project) => project.id === nextProjectId); const nextUserId = defaultLogUserId(users, nextProjectId, currentUserId, form.userId, Boolean(nextProject?.canManage)); const nextUser = users.find((user) => user.id === nextUserId); setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId && (nextUser?.role !== "tester" || task.testerId === nextUserId))?.id ?? "", userId: nextUserId }); }}><option value="">请选择</option>{projects.filter((project) => project.canLog).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
                 <label><span>任务</span><select required value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })}><option value="">请选择</option>{tasks.filter((task) => task.projectId === form.projectId && (users.find((user) => user.id === form.userId)?.role !== "tester" || task.testerId === form.userId)).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select></label>
-                {projects.find((project) => project.id === form.projectId)?.canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => { const nextUserId = e.target.value; setForm({ ...form, userId: nextUserId, taskId: tasks.some((task) => task.id === form.taskId && (users.find((user) => user.id === nextUserId)?.role !== "tester" || task.testerId === nextUserId)) ? form.taskId : "" }); }}>{users.filter((user) => user.projectIds.includes(form.projectId)).map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}</option>)}</select></label>}
+                {projects.find((project) => project.id === form.projectId)?.canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => { const nextUserId = e.target.value; setForm({ ...form, userId: nextUserId, taskId: tasks.some((task) => task.id === form.taskId && (users.find((user) => user.id === nextUserId)?.role !== "tester" || task.testerId === nextUserId)) ? form.taskId : "" }); }}>{users.filter((user) => user.active && user.projectIds.includes(form.projectId)).map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}</option>)}</select></label>}
                 <label><span>工作日期</span><input required type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} /></label>
                 <label><span>实际工时（小时）</span><input required type="number" min="0.1" max="24" step="0.5" value={form.durationHours} onChange={(e) => setForm({ ...form, durationHours: Number(e.target.value) })} /></label>
                 <label className="form-wide"><span>工作说明</span><textarea rows={4} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="简要说明完成了什么、遇到什么问题。" /></label>

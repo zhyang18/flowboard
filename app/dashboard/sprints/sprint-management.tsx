@@ -426,10 +426,16 @@ export default function SprintManagement() {
                 </div>
                 {sprint.canManage && (
                   <footer>
-                    <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划任务</button>
+                    {sprint.status !== "completed" ? (
+                      <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划任务</button>
+                    ) : (
+                      <span>历史快照已锁定</span>
+                    )}
                     <div>
                       <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
-                      <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
+                      {sprint.status === "planned" && (
+                        <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
+                      )}
                     </div>
                   </footer>
                 )}
