@@ -4,6 +4,7 @@ import {
   BarChart3,
   Blocks,
   ChevronLeft,
+  ChevronRight,
   FolderKanban,
   Gauge,
   LayoutDashboard,
@@ -122,10 +123,13 @@ export default function DashboardSidebar({
         <button
           className="collapse-button"
           type="button"
+          aria-label={collapsed ? "展开导航" : "收起导航"}
+          aria-pressed={collapsed}
+          title={collapsed ? "展开导航" : "收起导航"}
           onClick={() => setCollapsed((value) => !value)}
         >
-          <ChevronLeft size={17} />
-          <span>收起导航</span>
+          {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
+          <span>{collapsed ? "展开导航" : "收起导航"}</span>
         </button>
         <div className="sidebar-account">
           <span className="avatar">{user.name.slice(0, 1)}</span>
