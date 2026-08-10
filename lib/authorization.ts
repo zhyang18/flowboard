@@ -126,6 +126,46 @@ export function canManageProject(
 }
 
 /**
+ * 判断用户是否可以恢复已归档项目。
+ *
+ * @param user 当前登录用户。
+ * @param access 项目访问关系。
+ * @return 超级管理员、项目负责人或项目 manager 可恢复时返回 true。
+ */
+export function canRestoreProject(
+  user: Pick<CurrentUser, "id" | "role">,
+  access: ProjectAccess | null,
+): boolean {
+  if (
+    !access ||
+    !access.archived ||
+    user.role === "viewer" ||
+    user.role === "tester"
+  ) {
+    return false;
+  }
+  return (
+    user.role === "super_admin" ||
+    access.ownerId === user.id ||
+    access.memberRole === "manager"
+  );
+}
+
+/**
+ * 判断用户是否可以永久删除已归档项目。
+ *
+ * @param user 当前登录用户。
+ * @param access 项目访问关系。
+ * @return 超级管理员操作已归档项目时返回 true。
+ */
+export function canPermanentlyDeleteProject(
+  user: Pick<CurrentUser, "role">,
+  access: ProjectAccess | null,
+): boolean {
+  return Boolean(access?.archived && user.role === "super_admin");
+}
+
+/**
  * 判断用户是否可以在指定项目中贡献任务或工时。
  *
  * @param user 当前登录用户。

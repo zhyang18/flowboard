@@ -2856,6 +2856,16 @@ textarea {
   box-shadow: var(--shadow-md);
 }
 
+.project-card.archived {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.project-status.project-archived {
+  background: #edf0f4;
+  color: var(--ink-600);
+}
+
 .project-card > header {
   min-height: 76px;
   display: grid;
@@ -2998,6 +3008,15 @@ textarea {
 .project-card > footer button:hover {
   background: #eef3f8;
   color: var(--blue-700);
+}
+
+.project-card > footer button.danger {
+  color: #bd334d;
+}
+
+.project-card > footer button.danger:hover {
+  background: #fff0f3;
+  color: #a91f3a;
 }
 
 /* Forms shared by project and task modules */

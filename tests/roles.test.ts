@@ -6,6 +6,8 @@ import {
   canEditTask,
   canExportReports,
   canManageProject,
+  canPermanentlyDeleteProject,
+  canRestoreProject,
   type ProjectAccess,
 } from "../lib/authorization";
 import {
@@ -124,4 +126,22 @@ test("只有管理员角色可以导出报表", () => {
   assert.equal(canExportReports({ role: "member" }), false);
   assert.equal(canExportReports({ role: "tester" }), false);
   assert.equal(canExportReports({ role: "viewer" }), false);
+});
+
+test("归档项目可由项目管理者恢复且只能由超级管理员永久删除", () => {
+  const archivedAccess = { ...projectAccess, archived: true, memberRole: "manager" as const };
+  assert.equal(
+    canRestoreProject({ id: "manager-1", role: "member" }, archivedAccess),
+    true,
+  );
+  assert.equal(
+    canRestoreProject({ id: "tester-1", role: "tester" }, archivedAccess),
+    false,
+  );
+  assert.equal(canPermanentlyDeleteProject({ role: "super_admin" }, archivedAccess), true);
+  assert.equal(canPermanentlyDeleteProject({ role: "project_admin" }, archivedAccess), false);
+  assert.equal(
+    canPermanentlyDeleteProject({ role: "super_admin" }, { ...archivedAccess, archived: false }),
+    false,
+  );
 });

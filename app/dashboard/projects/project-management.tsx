@@ -10,7 +10,9 @@ import {
   LayoutGrid,
   ListFilter,
   Plus,
+  RotateCcw,
   Search,
+  Trash2,
   Users2,
   X,
 } from "lucide-react";
@@ -43,7 +45,10 @@ type ProjectRecord = {
   memberIds: string[];
   memberCount: number;
   testerCount: number;
+  archived: boolean;
   canManage: boolean;
+  canRestore: boolean;
+  canDeletePermanently: boolean;
   overdue: boolean;
 };
 
@@ -112,6 +117,7 @@ export default function ProjectManagement() {
   const [canCreate, setCanCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | ProjectStatus>("");
+  const [scope, setScope] = useState<"active" | "archived">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -168,18 +174,21 @@ export default function ProjectManagement() {
         project.name.toLowerCase().includes(normalized) ||
         project.code.toLowerCase().includes(normalized) ||
         project.ownerName.toLowerCase().includes(normalized);
-      return matchesQuery && (!status || project.status === status);
+      const matchesScope = scope === "archived" ? project.archived : !project.archived;
+      return matchesQuery && matchesScope && (!status || project.status === status);
     });
-  }, [projects, query, status]);
+  }, [projects, query, scope, status]);
 
   const stats = useMemo(
     () => ({
-      total: projects.length,
-      active: projects.filter((project) => project.status === "active").length,
-      completed: projects.filter((project) => project.status === "completed").length,
-      atRisk: projects.filter(
-        (project) => project.overdue,
+      total: projects.filter((project) => !project.archived).length,
+      active: projects.filter(
+        (project) => !project.archived && project.status === "active",
       ).length,
+      completed: projects.filter(
+        (project) => !project.archived && project.status === "completed",
+      ).length,
+      archived: projects.filter((project) => project.archived).length,
     }),
     [projects],
   );
@@ -269,11 +278,76 @@ export default function ProjectManagement() {
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "归档失败。");
       setNotice("项目已归档");
+      setScope("archived");
       await loadProjects();
     } catch (archiveError) {
       setError(
         archiveError instanceof Error ? archiveError.message : "归档失败。",
       );
+    }
+  }
+
+  /**
+   * 确认后恢复已归档项目。
+   *
+   * @param project 待恢复项目。
+   * @return 恢复完成后的 Promise。
+   */
+  async function restoreProject(project: ProjectRecord) {
+    if (!window.confirm(`确定恢复项目“${project.name}”吗？恢复后可以继续维护任务和工时。`)) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: false }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "恢复失败。");
+      setNotice("项目已恢复");
+      setScope("active");
+      await loadProjects();
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "恢复失败。");
+    }
+  }
+
+  /**
+   * 要求输入项目代号并二次确认后永久删除归档项目。
+   *
+   * @param project 待永久删除项目。
+   * @return 删除完成后的 Promise。
+   */
+  async function permanentlyDeleteProject(project: ProjectRecord) {
+    const confirmation = window.prompt(
+      `永久删除会清除项目的任务、迭代、成员关系和全部工时，且无法恢复。请输入项目代号 ${project.code} 确认：`,
+    );
+    if (confirmation === null) return;
+    if (confirmation.trim() !== project.code) {
+      setError("项目代号输入不匹配，永久删除已取消。");
+      return;
+    }
+    if (!window.confirm(`最后确认：永久删除项目“${project.name}”及其全部业务数据？`)) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}?permanent=true`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: confirmation.trim(),
+          acknowledgeDataLoss: true,
+        }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "永久删除失败。");
+      setNotice("项目已永久删除");
+      await loadProjects();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "永久删除失败。");
     }
   }
 
@@ -293,10 +367,10 @@ export default function ProjectManagement() {
       </section>
 
       <section className="project-stat-grid">
-        <article><span><FolderKanban size={18} /></span><div><small>全部项目</small><b>{stats.total}</b></div></article>
+        <article><span><FolderKanban size={18} /></span><div><small>有效项目</small><b>{stats.total}</b></div></article>
         <article><span className="green"><LayoutGrid size={18} /></span><div><small>进行中</small><b>{stats.active}</b></div></article>
         <article><span className="violet"><CheckCircle2 size={18} /></span><div><small>已完成</small><b>{stats.completed}</b></div></article>
-        <article><span className="orange"><Clock3 size={18} /></span><div><small>已超期</small><b>{stats.atRisk}</b></div></article>
+        <article><span className="orange"><Archive size={18} /></span><div><small>已归档</small><b>{stats.archived}</b></div></article>
       </section>
 
       <section className="module-toolbar">
@@ -320,6 +394,16 @@ export default function ProjectManagement() {
             ))}
           </select>
         </label>
+        <label className="module-select">
+          <Archive size={15} />
+          <select
+            value={scope}
+            onChange={(event) => setScope(event.target.value as "active" | "archived")}
+          >
+            <option value="active">有效项目</option>
+            <option value="archived">已归档项目</option>
+          </select>
+        </label>
         <span className="toolbar-result">显示 {filtered.length} 个项目</span>
       </section>
 
@@ -334,7 +418,7 @@ export default function ProjectManagement() {
               project.estimateHours > 0 &&
               project.actualHours > project.estimateHours;
             return (
-              <article className="project-card" key={project.id}>
+              <article className={`project-card ${project.archived ? "archived" : ""}`} key={project.id}>
                 <header>
                   <span className="project-mark" style={{ background: project.color }}>
                     {project.code.slice(0, 2)}
@@ -343,8 +427,8 @@ export default function ProjectManagement() {
                     <small>{project.code}</small>
                     <h3>{project.name}</h3>
                   </div>
-                  <span className={`project-status project-${project.status}`}>
-                    {projectStatusLabels[project.status]}
+                  <span className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}>
+                    {project.archived ? "已归档" : projectStatusLabels[project.status]}
                   </span>
                 </header>
                 <p>{project.description || "暂无项目描述。"}</p>
@@ -370,7 +454,7 @@ export default function ProjectManagement() {
                 </div>
                 <footer>
                   <span><Users2 size={14} /> {project.memberCount} 位成员（测试 {project.testerCount}）· {project.taskCount} 项任务</span>
-                  {project.canManage && (
+                  {!project.archived && project.canManage && (
                     <div>
                       <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
                         <Edit3 size={15} /> 编辑
@@ -378,6 +462,20 @@ export default function ProjectManagement() {
                       <button type="button" onClick={() => archiveProject(project)} aria-label={`归档 ${project.name}`}>
                         <Archive size={15} />
                       </button>
+                    </div>
+                  )}
+                  {project.archived && (project.canRestore || project.canDeletePermanently) && (
+                    <div>
+                      {project.canRestore && (
+                        <button type="button" onClick={() => void restoreProject(project)} aria-label={`恢复 ${project.name}`}>
+                          <RotateCcw size={15} /> 恢复
+                        </button>
+                      )}
+                      {project.canDeletePermanently && (
+                        <button className="danger" type="button" onClick={() => void permanentlyDeleteProject(project)} aria-label={`永久删除 ${project.name}`}>
+                          <Trash2 size={15} /> 永久删除
+                        </button>
+                      )}
                     </div>
                   )}
                 </footer>

@@ -1,5 +1,6 @@
 import {
   and,
+  count,
   eq,
   inArray,
   isNotNull,
@@ -16,8 +17,14 @@ import {
   sprints,
   tasks,
   users,
+  workLogs,
 } from "@/db/schema";
-import { canManageProject, getProjectAccess } from "@/lib/authorization";
+import {
+  canManageProject,
+  canPermanentlyDeleteProject,
+  canRestoreProject,
+  getProjectAccess,
+} from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
@@ -62,8 +69,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const access = await getProjectAccess(currentUser, id);
-  if (!access || access.archived) return apiError("项目不存在。", 404);
-  if (!canManageProject(currentUser, access)) return apiError("无权编辑项目。", 403);
+  if (!access) return apiError("项目不存在。", 404);
 
   let body: Record<string, unknown>;
   try {
@@ -74,7 +80,45 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const db = getDb();
   const [existing] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-  if (!existing || existing.archived) return apiError("项目不存在。", 404);
+  if (!existing) return apiError("项目不存在。", 404);
+  if (existing.archived) {
+    if (!canRestoreProject(currentUser, access)) return apiError("无权恢复该项目。", 403);
+    if (
+      body.archived !== false ||
+      Object.keys(body).some((field) => field !== "archived")
+    ) {
+      return apiError("已归档项目只能先执行恢复，恢复后才能修改资料。", 409);
+    }
+    try {
+      const restored = await db.transaction(async (tx) => {
+        for (const lockQuery of projectLifecycleLockQueries([id])) {
+          await tx.execute(lockQuery);
+        }
+        const [project] = await tx
+          .update(projects)
+          .set({ archived: false, updatedAt: new Date() })
+          .where(and(eq(projects.id, id), eq(projects.archived, true)))
+          .returning();
+        if (!project) throw new Error("PROJECT_CHANGED");
+        await tx.insert(auditLogs).values({
+          actorId: currentUser.id,
+          action: "project.restore",
+          entityType: "project",
+          entityId: id,
+          metadata: { name: project.name, code: project.code },
+        });
+        return project;
+      });
+      return NextResponse.json({ data: serializeProject(restored) });
+    } catch (error) {
+      if (error instanceof Error && error.message === "PROJECT_CHANGED") {
+        return apiError("项目归档状态已变化，请刷新后重试。", 409);
+      }
+      throw error;
+    }
+  }
+  if ("archived" in body) return apiError("请使用项目归档操作修改归档状态。");
+  if (!canManageProject(currentUser, access)) return apiError("无权编辑项目。", 403);
 
   const startDate = "startDate" in body ? parseDate(body.startDate) : existing.startDate;
   const dueDate = "dueDate" in body ? parseDate(body.dueDate) : existing.dueDate;
@@ -210,7 +254,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 /**
- * 归档项目并保留任务、迭代和工时历史。
+ * 归档项目，或由超级管理员永久删除已经归档的项目。
  *
  * @param request 当前归档请求。
  * @param context 包含项目 ID 的路由上下文。
@@ -223,28 +267,126 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const access = await getProjectAccess(currentUser, id);
-  if (!access || access.archived) return apiError("项目不存在。", 404);
-  if (!canManageProject(currentUser, access)) return apiError("无权归档项目。", 403);
-
+  if (!access) return apiError("项目不存在。", 404);
   const db = getDb();
-  await db.transaction(async (tx) => {
-    const [archived] = await tx
-      .update(projects)
-      .set({ archived: true, updatedAt: new Date() })
-      .where(and(eq(projects.id, id), eq(projects.archived, false)))
-      .returning({ id: projects.id, name: projects.name });
-    if (!archived) throw new Error("PROJECT_NOT_FOUND");
-    await tx.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "project.archive",
-      entityType: "project",
-      entityId: id,
-      metadata: { name: archived.name },
-    });
-  }).catch((error: unknown) => {
-    if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") return;
-    throw error;
-  });
+  const [existing] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  if (!existing) return apiError("项目不存在。", 404);
+  const permanent = new URL(request.url).searchParams.get("permanent") === "true";
 
-  return NextResponse.json({ success: true });
+  if (permanent) {
+    if (!canPermanentlyDeleteProject(currentUser, access)) {
+      return apiError("只有超级管理员可以永久删除已归档项目。", 403);
+    }
+    let body: { confirmation?: unknown; acknowledgeDataLoss?: unknown };
+    try {
+      body = (await request.json()) as {
+        confirmation?: unknown;
+        acknowledgeDataLoss?: unknown;
+      };
+    } catch {
+      return apiError("请提交永久删除确认信息。");
+    }
+    if (
+      body.confirmation !== existing.code ||
+      body.acknowledgeDataLoss !== true
+    ) {
+      return apiError("项目代号确认不匹配，永久删除已取消。", 409);
+    }
+
+    try {
+      const summary = await db.transaction(async (tx) => {
+        for (const lockQuery of projectLifecycleLockQueries([id])) {
+          await tx.execute(lockQuery);
+        }
+        const [lockedProject] = await tx
+          .select({ id: projects.id, name: projects.name, code: projects.code })
+          .from(projects)
+          .where(and(eq(projects.id, id), eq(projects.archived, true)))
+          .limit(1);
+        if (!lockedProject) throw new Error("PROJECT_CHANGED");
+
+        const taskRows = await tx
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(eq(tasks.projectId, id));
+        const taskIds = taskRows.map((task) => task.id);
+        const [sprintSummary] = await tx
+          .select({ value: count() })
+          .from(sprints)
+          .where(eq(sprints.projectId, id));
+        const [memberSummary] = await tx
+          .select({ value: count() })
+          .from(projectMembers)
+          .where(eq(projectMembers.projectId, id));
+        let workLogCount = 0;
+        if (taskIds.length) {
+          const [workLogSummary] = await tx
+            .select({ value: count() })
+            .from(workLogs)
+            .where(inArray(workLogs.taskId, taskIds));
+          workLogCount = Number(workLogSummary?.value ?? 0);
+          await tx.delete(workLogs).where(inArray(workLogs.taskId, taskIds));
+        }
+        await tx.delete(tasks).where(eq(tasks.projectId, id));
+        await tx.delete(sprints).where(eq(sprints.projectId, id));
+        await tx.delete(projectMembers).where(eq(projectMembers.projectId, id));
+        const [deleted] = await tx
+          .delete(projects)
+          .where(and(eq(projects.id, id), eq(projects.archived, true)))
+          .returning({ id: projects.id });
+        if (!deleted) throw new Error("PROJECT_CHANGED");
+        const deletionSummary = {
+          name: lockedProject.name,
+          code: lockedProject.code,
+          taskCount: taskIds.length,
+          sprintCount: Number(sprintSummary?.value ?? 0),
+          memberCount: Number(memberSummary?.value ?? 0),
+          workLogCount,
+        };
+        await tx.insert(auditLogs).values({
+          actorId: currentUser.id,
+          action: "project.delete_permanently",
+          entityType: "project",
+          entityId: id,
+          metadata: deletionSummary,
+        });
+        return deletionSummary;
+      });
+      return NextResponse.json({ success: true, deleted: true, summary });
+    } catch (error) {
+      if (error instanceof Error && error.message === "PROJECT_CHANGED") {
+        return apiError("项目归档状态已变化，请刷新后重试。", 409);
+      }
+      throw error;
+    }
+  }
+
+  if (access.archived) return apiError("项目已经归档。", 409);
+  if (!canManageProject(currentUser, access)) return apiError("无权归档项目。", 403);
+  try {
+    await db.transaction(async (tx) => {
+      for (const lockQuery of projectLifecycleLockQueries([id])) {
+        await tx.execute(lockQuery);
+      }
+      const [archived] = await tx
+        .update(projects)
+        .set({ archived: true, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.archived, false)))
+        .returning({ id: projects.id, name: projects.name });
+      if (!archived) throw new Error("PROJECT_CHANGED");
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "project.archive",
+        entityType: "project",
+        entityId: id,
+        metadata: { name: archived.name },
+      });
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "PROJECT_CHANGED") {
+      return apiError("项目归档状态已变化，请刷新后重试。", 409);
+    }
+    throw error;
+  }
 }

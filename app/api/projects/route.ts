@@ -11,6 +11,8 @@ import {
 import {
   canCreateProjects,
   canManageProject,
+  canPermanentlyDeleteProject,
+  canRestoreProject,
   projectVisibilityCondition,
 } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
@@ -59,12 +61,7 @@ export async function GET() {
     })
     .from(projects)
     .innerJoin(users, eq(projects.ownerId, users.id))
-    .where(
-      and(
-        eq(projects.archived, false),
-        projectVisibilityCondition(currentUser, projects.id),
-      ),
-    )
+    .where(projectVisibilityCondition(currentUser, projects.id))
     .orderBy(asc(projects.createdAt));
 
   const projectIds = projectRows.map(({ project }) => project.id);
@@ -173,6 +170,18 @@ export async function GET() {
         memberCount: members.length,
         testerCount: members.filter((member) => member.role === "tester").length,
         canManage: canManageProject(currentUser, {
+          projectId: project.id,
+          ownerId: project.ownerId,
+          archived: project.archived,
+          memberRole,
+        }),
+        canRestore: canRestoreProject(currentUser, {
+          projectId: project.id,
+          ownerId: project.ownerId,
+          archived: project.archived,
+          memberRole,
+        }),
+        canDeletePermanently: canPermanentlyDeleteProject(currentUser, {
           projectId: project.id,
           ownerId: project.ownerId,
           archived: project.archived,
