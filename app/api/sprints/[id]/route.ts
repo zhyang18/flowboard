@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { auditLogs, projects, sprints } from "@/db/schema";
-import { apiError, canManageUsers, textValue } from "@/lib/api";
+import { auditLogs, sprints, tasks } from "@/db/schema";
+import { canManageProject, getProjectAccess } from "@/lib/authorization";
+import { apiError, isUniqueViolation, textValue } from "@/lib/api";
+import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import {
   isSprintStatus,
@@ -14,93 +16,107 @@ import {
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 
+/**
+ * 更新迭代资料，并校验原项目和目标项目的管理权限。
+ *
+ * @param request 当前更新请求。
+ * @param context 包含迭代 ID 的路由上下文。
+ * @return 更新后的迭代记录。
+ */
 export async function PATCH(request: Request, context: RouteContext) {
+  if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
-  if (!canManageUsers(currentUser)) return apiError("无权编辑迭代。", 403);
-
   const { id } = await context.params;
+
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
     return apiError("请求内容不是有效的 JSON。");
   }
-
   const db = getDb();
-  const [existing] = await db
-    .select()
-    .from(sprints)
-    .where(eq(sprints.id, id))
-    .limit(1);
+  const [existing] = await db.select().from(sprints).where(eq(sprints.id, id)).limit(1);
   if (!existing) return apiError("迭代不存在。", 404);
+  const existingAccess = await getProjectAccess(currentUser, existing.projectId);
+  if (!canManageProject(currentUser, existingAccess)) return apiError("无权编辑迭代。", 403);
 
   const projectId =
-    typeof body.projectId === "string" && body.projectId
-      ? body.projectId
-      : existing.projectId;
+    typeof body.projectId === "string" && body.projectId ? body.projectId : existing.projectId;
   if (projectId !== existing.projectId) {
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1);
-    if (!project) return apiError("所属项目不存在。");
+    const [taskCount] = await db
+      .select({ value: count() })
+      .from(tasks)
+      .where(eq(tasks.sprintId, id));
+    if (Number(taskCount?.value ?? 0) > 0) {
+      return apiError("该迭代已规划任务，清空任务范围后才能更换项目。", 409);
+    }
+    const targetAccess = await getProjectAccess(currentUser, projectId);
+    if (!targetAccess || targetAccess.archived) return apiError("所属项目不存在。", 404);
+    if (!canManageProject(currentUser, targetAccess)) {
+      return apiError("无权将迭代移动到目标项目。", 403);
+    }
   }
 
-  const startDate =
-    "startDate" in body ? parseDate(body.startDate) : existing.startDate;
+  const startDate = "startDate" in body ? parseDate(body.startDate) : existing.startDate;
   const endDate = "endDate" in body ? parseDate(body.endDate) : existing.endDate;
-  if (!startDate || !endDate || startDate === undefined || endDate === undefined) {
+  if (!(startDate instanceof Date) || !(endDate instanceof Date)) {
     return apiError("请填写有效的迭代周期。");
   }
   if (endDate < startDate) return apiError("结束日期不能早于开始日期。");
-
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
   if (!name) return apiError("迭代名称不能为空。");
 
-  const [updated] = await db
-    .update(sprints)
-    .set({
-      projectId,
-      name,
-      goal: "goal" in body ? textValue(body.goal, 500) : existing.goal,
-      status: isSprintStatus(body.status) ? body.status : existing.status,
-      capacityHours:
-        "capacityHours" in body
-          ? safeHours(body.capacityHours)
-          : existing.capacityHours,
-      startDate,
-      endDate,
-      updatedAt: new Date(),
-    })
-    .where(eq(sprints.id, id))
-    .returning();
-
-  await db.insert(auditLogs).values({
-    actorId: currentUser.id,
-    action: "sprint.update",
-    entityType: "sprint",
-    entityId: id,
-    metadata: { changedFields: Object.keys(body) },
-  });
-
-  return NextResponse.json({ data: serializeSprint(updated) });
+  try {
+    const updated = await db.transaction(async (tx) => {
+      const [sprint] = await tx
+        .update(sprints)
+        .set({
+          projectId,
+          name,
+          goal: "goal" in body ? textValue(body.goal, 500) : existing.goal,
+          status: isSprintStatus(body.status) ? body.status : existing.status,
+          capacityHours:
+            "capacityHours" in body ? safeHours(body.capacityHours) : existing.capacityHours,
+          startDate,
+          endDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(sprints.id, id))
+        .returning();
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "sprint.update",
+        entityType: "sprint",
+        entityId: id,
+        metadata: { changedFields: Object.keys(body) },
+      });
+      return sprint;
+    });
+    return NextResponse.json({ data: serializeSprint(updated) });
+  } catch (error) {
+    if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);
+    throw error;
+  }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+/**
+ * 删除非进行中的迭代并保留任务，任务会自动退出该迭代。
+ *
+ * @param request 当前删除请求。
+ * @param context 包含迭代 ID 的路由上下文。
+ * @return 删除成功标记。
+ */
+export async function DELETE(request: Request, context: RouteContext) {
+  if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
-  if (!canManageUsers(currentUser)) return apiError("无权删除迭代。", 403);
-
   const { id } = await context.params;
   const db = getDb();
-  const [existing] = await db
-    .select()
-    .from(sprints)
-    .where(eq(sprints.id, id))
-    .limit(1);
+  const [existing] = await db.select().from(sprints).where(eq(sprints.id, id)).limit(1);
   if (!existing) return apiError("迭代不存在。", 404);
+  const access = await getProjectAccess(currentUser, existing.projectId);
+  if (!canManageProject(currentUser, access)) return apiError("无权删除迭代。", 403);
   if (existing.status === "active") return apiError("进行中的迭代不能直接删除。");
 
   await db.transaction(async (tx) => {
@@ -113,6 +129,5 @@ export async function DELETE(_request: Request, context: RouteContext) {
     });
     await tx.delete(sprints).where(eq(sprints.id, id));
   });
-
   return NextResponse.json({ success: true });
 }

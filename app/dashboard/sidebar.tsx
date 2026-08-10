@@ -17,6 +17,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { CurrentUser } from "@/lib/session";
+import { roleLabels } from "@/lib/users";
 import LogoutButton from "./logout-button";
 
 const navigation = [
@@ -30,6 +31,13 @@ const navigation = [
   { label: "设置", icon: Settings, href: "/dashboard/settings" },
 ];
 
+/**
+ * 渲染按角色过滤的桌面侧边导航。
+ *
+ * @param user 当前登录用户。
+ * @param workspaceName 当前工作空间名称。
+ * @return 桌面侧边栏组件。
+ */
 export default function DashboardSidebar({
   user,
   workspaceName,
@@ -85,7 +93,11 @@ export default function DashboardSidebar({
           )
         ))}
         <span className="nav-section-label manage-label">组织管理</span>
-        {navigation.slice(6).map((item) => (
+        {navigation.slice(6).filter((item) =>
+          item.href !== "/dashboard/users" ||
+          user.role === "super_admin" ||
+          user.role === "project_admin",
+        ).map((item) => (
           item.href ? (
             <Link
               className={pathname.startsWith(item.href) ? "active" : ""}
@@ -120,7 +132,7 @@ export default function DashboardSidebar({
           <div>
             <b>{user.name}</b>
             <small>
-              <Shield size={11} /> {user.role === "super_admin" ? "超级管理员" : "项目管理员"}
+              <Shield size={11} /> {roleLabels[user.role]}
             </small>
           </div>
           <LogoutButton />

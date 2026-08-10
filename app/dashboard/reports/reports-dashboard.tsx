@@ -51,12 +51,34 @@ type ReportData = {
   }>;
 };
 
+/**
+ * 转义 CSV 单元格并阻止电子表格公式注入。
+ *
+ * @param value 需要导出的单元格值。
+ * @return 可安全写入 CSV 的双引号字段。
+ */
+function csvCell(value: string | number): string {
+  const text = String(value);
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
+
+/**
+ * 渲染交付快照、周期工时趋势和成员负载报表。
+ *
+ * @return 报表组件。
+ */
 export default function ReportsDashboard() {
   const [period, setPeriod] = useState("30");
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  /**
+   * 加载当前周期报表。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadReport = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -85,6 +107,11 @@ export default function ReportsDashboard() {
     [data],
   );
 
+  /**
+   * 将当前项目交付报表导出为安全 CSV。
+   *
+   * @return 无返回值。
+   */
   function exportCsv() {
     if (!data) return;
     const rows = [
@@ -102,7 +129,7 @@ export default function ReportsDashboard() {
     ];
     const csv = `\uFEFF${rows
       .map((row) =>
-        row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","),
+        row.map(csvCell).join(","),
       )
       .join("\n")}`;
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -140,7 +167,7 @@ export default function ReportsDashboard() {
 
           <section className="report-main-grid">
             <article className="module-card report-trend-card">
-              <header className="module-card-header"><div><span className="eyebrow">工时趋势</span><h3>近六周登记工时</h3></div><span className="header-count">累计 {data.stats.loggedHours.toFixed(1)}h</span></header>
+              <header className="module-card-header"><div><span className="eyebrow">工时趋势</span><h3>所选周期登记工时</h3></div><span className="header-count">累计 {data.stats.loggedHours.toFixed(1)}h</span></header>
               <div className="report-bar-chart">
                 {data.weekly.map((item) => <div key={item.label}><span><i style={{ height: `${Math.max(5, (item.hours / weeklyMax) * 100)}%` }} /></span><b>{item.hours.toFixed(1)}h</b><small>{item.label}</small></div>)}
               </div>
@@ -170,7 +197,7 @@ export default function ReportsDashboard() {
               <header className="module-card-header"><div><span className="eyebrow">成员负载</span><h3>投入与利用率</h3></div><Users2 size={18} /></header>
               <div className="member-report-list">
                 {data.memberLoad.length ? data.memberLoad.map((member) => (
-                  <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${member.utilization}%` }} /></div></div><strong>{member.utilization}%</strong></div>
+                  <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${Math.min(100, member.utilization)}%` }} /></div></div><strong className={member.utilization > 100 ? "risk" : ""}>{member.utilization}%</strong></div>
                 )) : <div className="module-empty"><Gauge size={24} /> 当前周期暂无成员工时</div>}
               </div>
             </article>

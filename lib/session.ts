@@ -6,10 +6,22 @@ import { sessions, users } from "@/db/schema";
 
 export const SESSION_COOKIE = "flowboard_session";
 
+/**
+ * 对原始会话令牌执行单向散列。
+ *
+ * @param token 原始会话令牌。
+ * @return SHA-256 十六进制摘要。
+ */
 export function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * 生成安全的会话 Cookie 选项。
+ *
+ * @param expiresAt 可选的持久化到期时间。
+ * @return Next.js Cookie 写入选项。
+ */
 export function sessionCookieOptions(expiresAt?: Date) {
   return {
     httpOnly: true,
@@ -20,6 +32,12 @@ export function sessionCookieOptions(expiresAt?: Date) {
   };
 }
 
+/**
+ * 创建随机服务端会话。
+ *
+ * @param input 用户、客户端和可选存续时间信息。
+ * @return 原始令牌、散列和到期时间。
+ */
 export async function createSession(input: {
   userId: string;
   ipAddress?: string | null;
@@ -28,7 +46,7 @@ export async function createSession(input: {
 }) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashSessionToken(token);
-  const ttlDays = Math.max(1, Number(process.env.SESSION_TTL_DAYS) || 7);
+  const ttlDays = Math.min(30, Math.max(1, Number(process.env.SESSION_TTL_DAYS) || 7));
   const expiresAt = new Date(
     Date.now() + (input.ttlMs ?? ttlDays * 24 * 60 * 60 * 1000),
   );
@@ -45,6 +63,11 @@ export async function createSession(input: {
   return { token, tokenHash, expiresAt };
 }
 
+/**
+ * 删除当前浏览器会话并清空 Cookie。
+ *
+ * @return 无返回值。
+ */
 export async function deleteCurrentSession() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
@@ -61,6 +84,11 @@ export async function deleteCurrentSession() {
   });
 }
 
+/**
+ * 根据会话 Cookie 获取当前正常状态用户。
+ *
+ * @return 有效会话对应的用户，否则返回 null。
+ */
 export async function getCurrentUser() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
 

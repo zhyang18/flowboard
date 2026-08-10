@@ -7,6 +7,12 @@ import DashboardSidebar from "./sidebar";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 校验会话并渲染受保护的仪表盘框架。
+ *
+ * @param children 当前仪表盘子页面。
+ * @return 仪表盘布局组件。
+ */
 export default async function DashboardLayout({
   children,
 }: Readonly<{
@@ -26,7 +32,7 @@ export default async function DashboardLayout({
         <DashboardTopbar user={user} />
         <div className="dashboard-content">{children}</div>
       </section>
-      <MobileNavigation />
+      <MobileNavigation userRole={user.role} />
     </main>
   );
 }

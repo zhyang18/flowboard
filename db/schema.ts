@@ -1,16 +1,19 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum("user_role", [
   "super_admin",
@@ -51,6 +54,12 @@ export const sprintStatusEnum = pgEnum("sprint_status", [
   "planned",
   "active",
   "completed",
+]);
+
+export const projectMemberRoleEnum = pgEnum("project_member_role", [
+  "manager",
+  "member",
+  "viewer",
 ]);
 
 export const users = pgTable(
@@ -158,6 +167,33 @@ export const projects = pgTable(
   ],
 );
 
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: projectMemberRoleEnum("role").notNull().default("member"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "project_members_project_user_pk",
+      columns: [table.projectId, table.userId],
+    }),
+    index("project_members_user_idx").on(table.userId),
+    index("project_members_project_role_idx").on(table.projectId, table.role),
+  ],
+);
+
 export const sprints = pgTable(
   "sprints",
   {
@@ -182,6 +218,9 @@ export const sprints = pgTable(
     index("sprints_project_idx").on(table.projectId),
     index("sprints_status_idx").on(table.status),
     index("sprints_dates_idx").on(table.startDate, table.endDate),
+    uniqueIndex("sprints_project_name_unique").on(table.projectId, table.name),
+    check("sprints_capacity_hours_check", sql`${table.capacityHours} >= 0`),
+    check("sprints_dates_check", sql`${table.endDate} >= ${table.startDate}`),
   ],
 );
 
@@ -227,6 +266,8 @@ export const tasks = pgTable(
     ),
     index("tasks_assignee_idx").on(table.assigneeId),
     index("tasks_due_date_idx").on(table.dueDate),
+    check("tasks_estimate_hours_check", sql`${table.estimateHours} >= 0`),
+    check("tasks_actual_hours_check", sql`${table.actualHours} >= 0`),
   ],
 );
 
@@ -236,10 +277,10 @@ export const workLogs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     taskId: uuid("task_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => tasks.id, { onDelete: "restrict" }),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     workDate: timestamp("work_date", { withTimezone: true }).notNull(),
     durationHours: real("duration_hours").notNull(),
     note: text("note").notNull().default(""),
@@ -254,7 +295,27 @@ export const workLogs = pgTable(
     index("work_logs_task_idx").on(table.taskId),
     index("work_logs_user_date_idx").on(table.userId, table.workDate),
     index("work_logs_work_date_idx").on(table.workDate),
+    check(
+      "work_logs_duration_hours_check",
+      sql`${table.durationHours} > 0 and ${table.durationHours} <= 24`,
+    ),
   ],
+);
+
+export const loginRateLimits = pgTable(
+  "login_rate_limits",
+  {
+    key: text("key").primaryKey(),
+    failures: integer("failures").notNull().default(0),
+    windowStartedAt: timestamp("window_started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("login_rate_limits_blocked_until_idx").on(table.blockedUntil)],
 );
 
 export const workspaceSettings = pgTable("workspace_settings", {
@@ -286,6 +347,9 @@ export type UserStatus = (typeof userStatusEnum.enumValues)[number];
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
+export type ProjectMember = typeof projectMembers.$inferSelect;
+export type ProjectMemberRole =
+  (typeof projectMemberRoleEnum.enumValues)[number];
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];

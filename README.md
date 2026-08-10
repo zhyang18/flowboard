@@ -10,13 +10,13 @@
 - 用户列表、关键指标、搜索、部门/状态筛选、分页与详情
 - 新增、编辑、停用、恢复和删除用户
 - 超级管理员与项目管理员的服务端权限校验
-- 角色权限矩阵
+- 角色权限矩阵与项目级成员授权
 - PostgreSQL 数据模型、Drizzle 迁移和演示数据
 - 登录与用户变更审计记录
 - 工作台：项目组合进度、任务完成率、逾期风险与工时偏差
 - 项目：搜索筛选、新建编辑、状态维护、负责人、周期与安全归档
 - 任务看板：五阶段任务流、项目/负责人筛选、拖拽流转与任务增删改
-- 工时管理：预估工时、实际工时、剩余或超出工时、实际完成时间
+- 工时管理：预估工时、工时明细自动汇总、剩余或超出工时、实际完成时间
 - 迭代：周期、目标、团队容量、任务范围和完成进度
 - 工时分析：按项目、成员和日期登记、筛选与分析工时
 - 报表：任务状态、项目偏差、成员负载、周趋势与 CSV 导出
@@ -75,21 +75,25 @@
 
 迁移文件位于 `drizzle/`，包含：
 
-- `users`：账号、资料、角色、状态、容量和最后活跃时间
+- `users`：账号、资料、角色、状态和最后活跃时间；项目数与容量由关联数据派生
 - `sessions`：服务端登录会话
 - `audit_logs`：登录及用户管理操作审计
 - `projects`：项目代号、负责人、状态、交付周期和归档状态
-- `tasks`：看板状态、优先级、负责人、预估/实际工时和完成时间
+- `project_members`：项目成员及 manager/member/viewer 项目级角色
+- `tasks`：看板状态、优先级、负责人、预估工时、实际工时汇总缓存和完成时间
 - `sprints`：迭代目标、状态、周期和团队容量
 - `work_logs`：成员实际工时明细及任务工时回写
 - `workspace_settings`：工作空间和团队协作规则
+- `login_rate_limits`：不保存原始邮箱/IP 的持久化登录失败限流
 
 常用命令：
 
 ```bash
 npm run db:generate
+npm run db:preflight
 npm run db:migrate
 npm run db:seed
+npm test
 ```
 
 ## API
@@ -107,7 +111,7 @@ npm run db:seed
 | GET / POST | `/api/projects` | 获取项目组合 / 创建项目 |
 | PATCH / DELETE | `/api/projects/:id` | 更新 / 归档项目 |
 | GET / POST | `/api/tasks` | 获取看板任务 / 创建任务 |
-| PATCH / DELETE | `/api/tasks/:id` | 更新状态与工时 / 删除任务 |
+| PATCH / DELETE | `/api/tasks/:id` | 更新任务资料与状态 / 删除无工时历史的任务 |
 | GET / POST | `/api/sprints` | 获取迭代组合 / 创建迭代 |
 | PATCH / DELETE | `/api/sprints/:id` | 更新 / 删除迭代 |
 | PUT | `/api/sprints/:id/tasks` | 规划迭代任务范围 |
@@ -116,31 +120,39 @@ npm run db:seed
 | GET | `/api/reports` | 获取交付与工时报表 |
 | GET / PUT | `/api/settings` | 获取 / 更新工作空间设置 |
 
-所有业务接口都会在服务端验证登录会话；项目维护和用户管理还会校验管理角色。
+所有业务接口都会在服务端验证登录会话和请求来源。普通用户只能访问已加入的项目；项目负责人或项目 manager 维护项目和迭代，普通成员只能维护自己负责或创建的任务，只读用户不能写入任务或工时。任务实际工时只能由工时明细自动汇总，不能在任务表单中手工修改。
 
 ## Vercel 部署
 
-1. 将 `web` 目录作为 Vercel 项目的 Root Directory。
+1. 当前仓库根目录就是 Next.js 项目，Vercel Root Directory 使用 `./`。
 2. 在 Vercel 中创建或连接 PostgreSQL 数据库。
 3. 配置以下环境变量：
    - `DATABASE_URL`
+   - `DATABASE_CONNECT_TIMEOUT_SECONDS=30`
    - `SESSION_TTL_DAYS`
    - `NEXT_PUBLIC_APP_URL`
    - `NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS=false`
    - `SEED_ADMIN_EMAIL`
    - `SEED_ADMIN_PASSWORD`
-4. 在首次发布前，对生产数据库执行：
+   - `SEED_DEMO_DATA=false`
+4. 在首次发布新代码前，先备份数据库、执行只读预检，再对生产数据库执行迁移：
 
    ```bash
+   npm run db:preflight
    npm run db:migrate
-   npm run db:seed
    ```
 
-5. 正常部署即可；Vercel 会自动识别 Next.js。
+   `0003_bent_spiral.sql` 会从现有项目负责人、任务负责人/创建人和工时记录回填项目成员，并按工时明细重新校准任务实际工时。若同一项目存在重名迭代，迁移会明确中止，需先清理重复名称。
+
+5. 仅首次创建生产管理员时执行 `npm run db:seed`。当 `SEED_DEMO_DATA=false` 时只创建管理员和工作空间设置，且强制要求显式配置管理员邮箱和密码；不要把本地演示数据写入生产库。
+
+6. 正常部署即可；Vercel 会自动识别 Next.js。
 
 ## 生产建议
 
 - 首次登录后立即替换初始化管理员密码。
-- 在 Vercel 防火墙或上游网关配置登录接口限流。
+- 应用已经提供按邮箱和 IP 散列键的登录限流；仍建议在 Vercel 防火墙或上游网关增加全局速率限制。
 - 为生产数据库启用自动备份、连接池和 SSL。
+- 发布顺序必须是“数据库备份 → 迁移 → 应用部署 → 登录与关键链路验收”，不能先部署依赖新表的代码。
+- 上线后验证不同角色的项目可见范围、任务负责人候选、工时回写、禁用成员和报表汇总口径。
 - 后续接入邮件服务后，可将“待激活”账号改为一次性邀请链接流程。

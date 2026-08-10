@@ -46,10 +46,21 @@ type BoardTask = {
   sortOrder: number;
   dueDate: string | null;
   completedAt: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  canManageProject: boolean;
+  overdue: boolean;
 };
 
-type ProjectOption = { id: string; name: string; code: string; color: string };
-type AssigneeOption = { id: string; name: string };
+type ProjectOption = {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
+  canCreateTask: boolean;
+  canManage: boolean;
+};
+type AssigneeOption = { id: string; name: string; projectIds: string[] };
 
 type TaskForm = {
   projectId: string;
@@ -59,7 +70,6 @@ type TaskForm = {
   priority: TaskPriority;
   assigneeId: string;
   estimateHours: number;
-  actualHours: number;
   dueDate: string;
 };
 
@@ -71,15 +81,25 @@ const emptyForm: TaskForm = {
   priority: "medium",
   assigneeId: "",
   estimateHours: 4,
-  actualHours: 0,
   dueDate: "",
 };
-const boardReferenceTime = Date.now();
 
+/**
+ * 将接口日期转换成日期输入框值。
+ *
+ * @param value ISO 日期或空值。
+ * @return YYYY-MM-DD 字符串。
+ */
 function dateInput(value: string | null) {
   return value ? value.slice(0, 10) : "";
 }
 
+/**
+ * 格式化任务截止日期。
+ *
+ * @param value ISO 日期或空值。
+ * @return 简短日期文本。
+ */
 function dateLabel(value: string | null) {
   if (!value) return "未排期";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -88,6 +108,12 @@ function dateLabel(value: string | null) {
   }).format(new Date(value));
 }
 
+/**
+ * 格式化任务实际完成时间。
+ *
+ * @param value ISO 完成时间或空值。
+ * @return 日期时间文本。
+ */
 function completedLabel(value: string | null) {
   if (!value) return "";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -98,10 +124,17 @@ function completedLabel(value: string | null) {
   }).format(new Date(value));
 }
 
+/**
+ * 渲染按项目权限过滤的任务看板。
+ *
+ * @return 任务看板组件。
+ */
 export default function TaskBoard() {
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
+  const [canCreate, setCanCreate] = useState(false);
+  const [defaultEstimateHours, setDefaultEstimateHours] = useState(4);
   const [projectId, setProjectId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [query, setQuery] = useState("");
@@ -115,6 +148,11 @@ export default function TaskBoard() {
   const [form, setForm] = useState<TaskForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * 按当前筛选条件加载任务和可选负责人。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadTasks = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -128,12 +166,16 @@ export default function TaskBoard() {
         data?: BoardTask[];
         projects?: ProjectOption[];
         assignees?: AssigneeOption[];
+        canCreate?: boolean;
+        defaultEstimateHours?: number;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "任务加载失败。");
       setTasks(result.data ?? []);
       setProjects(result.projects ?? []);
       setAssignees(result.assignees ?? []);
+      setCanCreate(Boolean(result.canCreate));
+      setDefaultEstimateHours(result.defaultEstimateHours ?? 4);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "任务加载失败。");
     } finally {
@@ -155,26 +197,43 @@ export default function TaskBoard() {
   const metrics = useMemo(() => {
     const estimate = tasks.reduce((sum, task) => sum + task.estimateHours, 0);
     const actual = tasks.reduce((sum, task) => sum + task.actualHours, 0);
-    const overdue = tasks.filter(
-      (task) =>
-        task.status !== "done" &&
-        task.dueDate &&
-        new Date(task.dueDate).getTime() < boardReferenceTime,
-    ).length;
+    const overdue = tasks.filter((task) => task.overdue).length;
     return { estimate, actual, overdue };
   }, [tasks]);
 
+  /**
+   * 在可写项目中打开新建任务表单。
+   *
+   * @param status 默认任务状态。
+   * @return 无返回值。
+   */
   function openCreate(status: TaskStatus = "todo") {
+    const writableProject =
+      projects.find((project) => project.id === projectId && project.canCreateTask) ??
+      projects.find((project) => project.canCreateTask);
     setEditingId(null);
     setForm({
       ...emptyForm,
       status,
-      projectId: projectId || projects[0]?.id || "",
-      assigneeId: assigneeId || "",
+      estimateHours: defaultEstimateHours,
+      projectId: writableProject?.id ?? "",
+      assigneeId:
+        assignees.find(
+          (assignee) =>
+            assignee.id === assigneeId &&
+            writableProject &&
+            assignee.projectIds.includes(writableProject.id),
+        )?.id ?? "",
     });
     setModalOpen(true);
   }
 
+  /**
+   * 使用现有任务数据打开编辑表单。
+   *
+   * @param task 待编辑任务。
+   * @return 无返回值。
+   */
   function openEdit(task: BoardTask) {
     setEditingId(task.id);
     setForm({
@@ -185,12 +244,17 @@ export default function TaskBoard() {
       priority: task.priority,
       assigneeId: task.assigneeId ?? "",
       estimateHours: task.estimateHours,
-      actualHours: task.actualHours,
       dueDate: dateInput(task.dueDate),
     });
     setModalOpen(true);
   }
 
+  /**
+   * 创建或更新任务资料。
+   *
+   * @param event 任务表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
   async function saveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -213,6 +277,13 @@ export default function TaskBoard() {
     }
   }
 
+  /**
+   * 更新任务看板状态并在失败时回滚界面。
+   *
+   * @param taskId 任务 ID。
+   * @param status 目标状态。
+   * @return 更新完成后的 Promise。
+   */
   async function updateStatus(taskId: string, status: TaskStatus) {
     const previous = tasks;
     setTasks((current) =>
@@ -238,6 +309,7 @@ export default function TaskBoard() {
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "状态更新失败。");
       setNotice(`任务已移至“${taskStatusLabels[status]}”`);
+      await loadTasks();
     } catch (updateError) {
       setTasks(previous);
       setError(
@@ -246,6 +318,13 @@ export default function TaskBoard() {
     }
   }
 
+  /**
+   * 处理任务拖放到目标状态列。
+   *
+   * @param event 拖放事件。
+   * @param status 目标状态。
+   * @return 无返回值。
+   */
   function onDrop(event: DragEvent<HTMLElement>, status: TaskStatus) {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/task-id") || draggedId;
@@ -255,6 +334,12 @@ export default function TaskBoard() {
     if (task && task.status !== status) void updateStatus(task.id, status);
   }
 
+  /**
+   * 确认后删除没有工时历史的任务。
+   *
+   * @param task 待删除任务。
+   * @return 删除完成后的 Promise。
+   */
   async function deleteTask(task: BoardTask) {
     if (!window.confirm(`确定删除任务“${task.title}”吗？`)) return;
     try {
@@ -276,9 +361,11 @@ export default function TaskBoard() {
           <h2>从需求进入到按时完成</h2>
           <p>拖动任务完成流转，持续核对预估工时、实际投入与完成时间。</p>
         </div>
-        <button className="primary-action module-primary" type="button" onClick={() => openCreate()}>
-          <Plus size={16} /> 新建任务
-        </button>
+        {canCreate && (
+          <button className="primary-action module-primary" type="button" onClick={() => openCreate()}>
+            <Plus size={16} /> 新建任务
+          </button>
+        )}
       </section>
 
       <section className="board-summary">
@@ -348,15 +435,12 @@ export default function TaskBoard() {
                     {columnTasks.map((task) => {
                       const remaining = task.estimateHours - task.actualHours;
                       const overrun = task.estimateHours > 0 && remaining < 0;
-                      const overdue =
-                        task.status !== "done" &&
-                        task.dueDate &&
-                        new Date(task.dueDate).getTime() < boardReferenceTime;
+                      const overdue = task.overdue;
                       return (
                         <article
                           className={`kanban-task ${draggedId === task.id ? "dragging" : ""}`}
                           key={task.id}
-                          draggable
+                          draggable={task.canEdit}
                           onDragStart={(event) => {
                             setDraggedId(task.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -371,11 +455,13 @@ export default function TaskBoard() {
                             <span className={`task-priority priority-${task.priority}`}>
                               {taskPriorityLabels[task.priority]}
                             </span>
-                            <div className="task-card-actions">
-                              <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>
-                              <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>
-                              <GripVertical size={14} />
-                            </div>
+                            {(task.canEdit || task.canDelete) && (
+                              <div className="task-card-actions">
+                                {task.canEdit && <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>}
+                                {task.canDelete && <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>}
+                                {task.canEdit && <GripVertical size={14} />}
+                              </div>
+                            )}
                           </header>
                           <small className="task-project">
                             <i style={{ background: task.projectColor }} /> {task.projectCode}
@@ -407,9 +493,11 @@ export default function TaskBoard() {
                         </article>
                       );
                     })}
-                    <button className="add-column-task" type="button" onClick={() => openCreate(status)}>
-                      <Plus size={14} /> 添加任务
-                    </button>
+                    {canCreate && (
+                      <button className="add-column-task" type="button" onClick={() => openCreate(status)}>
+                        <Plus size={14} /> 添加任务
+                      </button>
+                    )}
                   </div>
                 </section>
               );
@@ -424,7 +512,7 @@ export default function TaskBoard() {
             <header>
               <div>
                 <span className="eyebrow">{editingId ? "编辑任务" : "新任务"}</span>
-                <h2 id="task-modal-title">{editingId ? "更新任务与工时" : "创建一项可交付任务"}</h2>
+                <h2 id="task-modal-title">{editingId ? "更新任务资料" : "创建一项可交付任务"}</h2>
               </div>
               <button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button>
             </header>
@@ -436,16 +524,33 @@ export default function TaskBoard() {
                 </label>
                 <label>
                   <span>所属项目</span>
-                  <select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>
+                  <select required disabled={Boolean(editingId && !tasks.find((task) => task.id === editingId)?.canManageProject)} value={form.projectId} onChange={(e) => {
+                    const nextProjectId = e.target.value;
+                    setForm({
+                      ...form,
+                      projectId: nextProjectId,
+                      assigneeId: assignees.some(
+                        (assignee) =>
+                          assignee.id === form.assigneeId &&
+                          assignee.projectIds.includes(nextProjectId),
+                      )
+                        ? form.assigneeId
+                        : "",
+                    });
+                  }}>
                     <option value="">请选择</option>
-                    {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+                    {projects.filter((project) =>
+                      editingId
+                        ? project.id === form.projectId || project.canManage
+                        : project.canCreateTask,
+                    ).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
                   </select>
                 </label>
                 <label>
                   <span>负责人</span>
-                  <select value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
+                  <select disabled={Boolean(editingId && !tasks.find((task) => task.id === editingId)?.canManageProject)} value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
                     <option value="">待认领</option>
-                    {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+                    {assignees.filter((assignee) => assignee.projectIds.includes(form.projectId)).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
                   </select>
                 </label>
                 <label>
@@ -466,7 +571,12 @@ export default function TaskBoard() {
                 </label>
                 <label>
                   <span>实际工时（小时）</span>
-                  <input type="number" min="0" step="0.5" value={form.actualHours} onChange={(e) => setForm({ ...form, actualHours: Number(e.target.value) })} />
+                  <input
+                    type="number"
+                    value={tasks.find((task) => task.id === editingId)?.actualHours ?? 0}
+                    disabled
+                    readOnly
+                  />
                 </label>
                 <label>
                   <span>截止日期</span>
@@ -479,7 +589,7 @@ export default function TaskBoard() {
               </div>
               <div className="time-form-hint">
                 <Clock3 size={15} />
-                <span>系统会持续显示预估、实际与剩余工时；任务进入“已完成”后自动记录实际完成时间。</span>
+                <span>实际工时只由“工时分析”中的明细自动汇总；任务进入“已完成”后按工作空间设置记录实际完成时间。</span>
               </div>
               <footer>
                 <button type="button" onClick={() => setModalOpen(false)}>取消</button>

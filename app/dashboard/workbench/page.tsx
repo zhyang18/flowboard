@@ -11,9 +11,11 @@ import {
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { projects, tasks, users } from "@/db/schema";
+import { projectVisibilityCondition } from "@/lib/authorization";
+import { getCurrentUser } from "@/lib/session";
 import {
   projectStatusLabels,
   taskStatusLabels,
@@ -21,9 +23,14 @@ import {
 
 export const metadata: Metadata = { title: "工作台" };
 export const dynamic = "force-dynamic";
-const dashboardReferenceTime = Date.now();
 
-function dateLabel(date: Date | null) {
+/**
+ * 将项目日期格式化为简短中文日期。
+ *
+ * @param date 项目日期。
+ * @return 用于卡片展示的日期文本。
+ */
+function dateLabel(date: Date | null): string {
   if (!date) return "未设置";
   return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
@@ -31,13 +38,25 @@ function dateLabel(date: Date | null) {
   }).format(date);
 }
 
+/**
+ * 渲染当前用户权限范围内的工作台聚合视图。
+ *
+ * @return 工作台服务端页面。
+ */
 export default async function WorkbenchPage() {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return null;
   const db = getDb();
   const [projectRows, taskRows] = await Promise.all([
     db
       .select()
       .from(projects)
-      .where(eq(projects.archived, false))
+      .where(
+        and(
+          eq(projects.archived, false),
+          projectVisibilityCondition(currentUser, projects.id),
+        ),
+      )
       .orderBy(asc(projects.dueDate)),
     db
       .select({
@@ -46,11 +65,17 @@ export default async function WorkbenchPage() {
         projectCode: projects.code,
         projectColor: projects.color,
         assigneeName: users.name,
+        overdue: sql<boolean>`${tasks.status} <> 'done' and ${tasks.dueDate} < now()`,
       })
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
       .leftJoin(users, eq(tasks.assigneeId, users.id))
-      .where(eq(projects.archived, false))
+      .where(
+        and(
+          eq(projects.archived, false),
+          projectVisibilityCondition(currentUser, tasks.projectId),
+        ),
+      )
       .orderBy(desc(tasks.updatedAt)),
   ]);
 
@@ -59,12 +84,7 @@ export default async function WorkbenchPage() {
   const activeTasks = taskRows.filter(({ task }) =>
     ["todo", "in_progress", "review"].includes(task.status),
   ).length;
-  const overdueTasks = taskRows.filter(
-    ({ task }) =>
-      task.status !== "done" &&
-      task.dueDate &&
-      task.dueDate.getTime() < dashboardReferenceTime,
-  ).length;
+  const overdueTasks = taskRows.filter(({ overdue }) => overdue).length;
   const estimateHours = taskRows.reduce(
     (sum, { task }) => sum + task.estimateHours,
     0,

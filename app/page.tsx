@@ -5,6 +5,11 @@ import LoginForm from "./login-form";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 根据会话状态渲染登录页或跳转工作台。
+ *
+ * @return 登录页面组件。
+ */
 export default async function LoginPage() {
   const user = await getCurrentUser();
   if (user) redirect("/dashboard/workbench");
@@ -41,7 +46,7 @@ export default async function LoginPage() {
 
         <div className="showcase-board" aria-hidden="true">
           <header>
-            <span>迭代 2024-07</span>
+            <span>迭代 2026-08</span>
             <span>本周交付概览</span>
           </header>
           <div className="showcase-metrics">
@@ -63,9 +68,9 @@ export default async function LoginPage() {
           </div>
           <div className="showcase-columns">
             {[
-              ["待处理", "用户登录接口优化", "8h"],
-              ["进行中", "支付流程异常修复", "6.5h"],
-              ["已完成", "首页数据展示开发", "9h"],
+              ["待处理", "项目成员权限校验", "8h"],
+              ["进行中", "工时汇总一致性优化", "6.5h"],
+              ["已完成", "交付报表口径校准", "9h"],
             ].map(([status, task, hours], index) => (
               <article key={status}>
                 <span className={`column-dot dot-${index}`} />

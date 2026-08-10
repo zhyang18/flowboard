@@ -27,10 +27,22 @@ export const statusLabels: Record<UserStatus, string> = {
   invited: "待激活",
 };
 
+/**
+ * 判断输入是否为合法用户角色。
+ *
+ * @param value 待判断值。
+ * @return 属于用户角色枚举时返回 true。
+ */
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && USER_ROLES.includes(value as UserRole);
 }
 
+/**
+ * 判断输入是否为合法账号状态。
+ *
+ * @param value 待判断值。
+ * @return 属于账号状态枚举时返回 true。
+ */
 export function isUserStatus(value: unknown): value is UserStatus {
   return (
     typeof value === "string" &&
@@ -47,10 +59,15 @@ export type UserInput = {
   role: UserRole;
   status: UserStatus;
   password: string;
-  projectCount: number;
-  capacity: number;
 };
 
+/**
+ * 校验并规范化用户新增或更新输入。
+ *
+ * @param input 客户端提交的用户字段。
+ * @param partial 是否允许只提交部分字段。
+ * @return 规范化后的用户数据或校验错误。
+ */
 export function parseUserInput(
   input: Record<string, unknown>,
   partial = false,
@@ -99,34 +116,27 @@ export function parseUserInput(
 
   if (!partial || "password" in input) {
     const password = typeof input.password === "string" ? input.password : "";
-    if (password && password.length < 8) {
-      return { error: "登录密码至少需要 8 个字符。" };
+    if (password && password.length < 10) {
+      return { error: "登录密码至少需要 10 个字符。" };
     }
     if (password.length > 128) {
       return { error: "登录密码不能超过 128 个字符。" };
     }
+    if (password && (!/[A-Za-z]/.test(password) || !/\d/.test(password))) {
+      return { error: "登录密码必须同时包含字母和数字。" };
+    }
     data.password = password;
-  }
-
-  if (!partial || "projectCount" in input) {
-    const projectCount = Number(input.projectCount ?? 0);
-    if (!Number.isInteger(projectCount) || projectCount < 0 || projectCount > 999) {
-      return { error: "项目数量必须是 0 至 999 的整数。" };
-    }
-    data.projectCount = projectCount;
-  }
-
-  if (!partial || "capacity" in input) {
-    const capacity = Number(input.capacity ?? 0);
-    if (!Number.isInteger(capacity) || capacity < 0 || capacity > 100) {
-      return { error: "容量使用率必须是 0 至 100 的整数。" };
-    }
-    data.capacity = capacity;
   }
 
   return { data };
 }
 
+/**
+ * 将用户数据库记录转换成客户端安全格式。
+ *
+ * @param user 不包含密码散列的用户记录。
+ * @return 日期已经序列化的用户对象。
+ */
 export function serializeUser(user: {
   id: string;
   name: string;

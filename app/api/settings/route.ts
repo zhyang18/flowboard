@@ -5,11 +5,17 @@ import { auditLogs, workspaceSettings } from "@/db/schema";
 import { apiError, canManageUsers, textValue } from "@/lib/api";
 import { defaultWorkspaceSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/session";
+import { hasTrustedOrigin } from "@/lib/request-security";
 import { safeHours } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * 获取工作空间设置和当前用户的维护权限。
+ *
+ * @return 工作空间设置。
+ */
 export async function GET() {
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
@@ -27,7 +33,14 @@ export async function GET() {
   });
 }
 
+/**
+ * 校验并保存工作空间级工时与任务规则。
+ *
+ * @param request 当前设置更新请求。
+ * @return 保存后的工作空间设置。
+ */
 export async function PUT(request: Request) {
+  if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
   if (!canManageUsers(currentUser)) return apiError("无权修改工作空间设置。", 403);
@@ -47,6 +60,11 @@ export async function PUT(request: Request) {
 
   if (!workspaceName) return apiError("工作空间名称不能为空。");
   if (!timezone) return apiError("请选择时区。");
+  try {
+    new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
+  } catch {
+    return apiError("请选择有效的 IANA 时区。");
+  }
   if (defaultEstimateHours <= 0 || workdayHours <= 0 || workdayHours > 24) {
     return apiError("默认预估和每日工时必须大于 0，每日工时不能超过 24 小时。");
   }
@@ -64,21 +82,23 @@ export async function PUT(request: Request) {
   };
 
   const db = getDb();
-  const [existing] = await db.select().from(workspaceSettings).limit(1);
-  const [saved] = existing
-    ? await db
-        .update(workspaceSettings)
-        .set(values)
-        .where(eq(workspaceSettings.id, existing.id))
-        .returning()
-    : await db.insert(workspaceSettings).values(values).returning();
-
-  await db.insert(auditLogs).values({
-    actorId: currentUser.id,
-    action: "settings.update",
-    entityType: "workspace_settings",
-    entityId: saved.id,
-    metadata: { changedFields: Object.keys(body) },
+  const saved = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(workspaceSettings).limit(1);
+    const [record] = existing
+      ? await tx
+          .update(workspaceSettings)
+          .set(values)
+          .where(eq(workspaceSettings.id, existing.id))
+          .returning()
+      : await tx.insert(workspaceSettings).values(values).returning();
+    await tx.insert(auditLogs).values({
+      actorId: currentUser.id,
+      action: "settings.update",
+      entityType: "workspace_settings",
+      entityId: record.id,
+      metadata: { changedFields: Object.keys(body) },
+    });
+    return record;
   });
 
   return NextResponse.json({

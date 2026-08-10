@@ -1,23 +1,33 @@
 import {
   and,
   count,
+  countDistinct,
   desc,
   eq,
+  gte,
   ilike,
+  inArray,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { auditLogs, users } from "@/db/schema";
 import {
-  apiError,
-  canManageUsers,
-  isUniqueViolation,
-} from "@/lib/api";
+  auditLogs,
+  projectMembers,
+  projects,
+  tasks,
+  users,
+  workLogs,
+} from "@/db/schema";
+import { canManageUsers } from "@/lib/authorization";
+import { apiError, isUniqueViolation } from "@/lib/api";
 import { hashPassword } from "@/lib/password";
+import { countWeekdays, startOfUtcDay } from "@/lib/reporting";
+import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
+import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
 import {
   isUserStatus,
   parseUserInput,
@@ -28,9 +38,14 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * 获取用户列表，并从真实项目成员和最近工时派生项目数与容量。
+ *
+ * @param request 当前用户查询请求。
+ * @return 用户分页、统计和筛选数据。
+ */
 export async function GET(request: Request) {
   const currentUser = await getCurrentUser();
-
   if (!currentUser) return apiError("请先登录。", 401);
   if (!canManageUsers(currentUser)) return apiError("无权查看用户列表。", 403);
 
@@ -39,29 +54,20 @@ export async function GET(request: Request) {
   const department = searchParams.get("department")?.trim().slice(0, 60) ?? "";
   const status = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-  const pageSize = Math.min(
-    100,
-    Math.max(1, Number(searchParams.get("pageSize")) || 20),
-  );
+  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize")) || 20));
   const conditions: SQL[] = [];
-
   if (query) {
     const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
     conditions.push(
-      or(
-        ilike(users.name, pattern),
-        ilike(users.email, pattern),
-        ilike(users.team, pattern),
-      )!,
+      or(ilike(users.name, pattern), ilike(users.email, pattern), ilike(users.team, pattern))!,
     );
   }
-
   if (department) conditions.push(eq(users.department, department));
   if (isUserStatus(status)) conditions.push(eq(users.status, status));
 
   const where = conditions.length ? and(...conditions) : undefined;
   const db = getDb();
-  const [records, totalResult, statsResult, departmentRows] = await Promise.all([
+  const [records, totalResult, statsResult, departmentRows, settings] = await Promise.all([
     db
       .select({
         id: users.id,
@@ -72,8 +78,6 @@ export async function GET(request: Request) {
         team: users.team,
         role: users.role,
         status: users.status,
-        projectCount: users.projectCount,
-        capacity: users.capacity,
         lastSeenAt: users.lastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
@@ -92,89 +96,122 @@ export async function GET(request: Request) {
         admins: sql<number>`count(*) filter (where ${users.role} in ('super_admin', 'project_admin'))::int`,
       })
       .from(users),
-    db
-      .selectDistinct({ department: users.department })
-      .from(users)
-      .orderBy(users.department),
+    db.selectDistinct({ department: users.department }).from(users).orderBy(users.department),
+    getWorkspaceSettings(),
   ]);
 
+  const userIds = records.map((record) => record.id);
+  const today = startOfUtcDay(new Date());
+  const from = new Date(today);
+  from.setUTCDate(from.getUTCDate() - 6);
+  const [projectCounts, recentHours] = userIds.length
+    ? await Promise.all([
+        db
+          .select({
+            userId: projectMembers.userId,
+            value: countDistinct(projectMembers.projectId),
+          })
+          .from(projectMembers)
+          .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+          .where(
+            and(
+              inArray(projectMembers.userId, userIds),
+              eq(projects.archived, false),
+            ),
+          )
+          .groupBy(projectMembers.userId),
+        db
+          .select({
+            userId: workLogs.userId,
+            hours: sql<number>`coalesce(sum(${workLogs.durationHours}), 0)`,
+          })
+          .from(workLogs)
+          .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
+          .where(
+            and(inArray(workLogs.userId, userIds), gte(workLogs.workDate, from)),
+          )
+          .groupBy(workLogs.userId),
+      ])
+    : [[], []];
+  const projectCountMap = new Map(projectCounts.map((item) => [item.userId, Number(item.value)]));
+  const hourMap = new Map(recentHours.map((item) => [item.userId, Number(item.hours)]));
+  const workspaceSettings = settings ?? defaultWorkspaceSettings;
+  const availableHours = Math.max(
+    1,
+    countWeekdays(from, today) * workspaceSettings.workdayHours,
+  );
+
   return NextResponse.json({
-    data: records.map(serializeUser),
-    pagination: {
-      page,
-      pageSize,
-      total: totalResult[0]?.value ?? 0,
-    },
-    stats: statsResult[0] ?? {
-      total: 0,
-      active: 0,
-      invited: 0,
-      admins: 0,
-    },
+    data: records.map((record) =>
+      serializeUser({
+        ...record,
+        projectCount: projectCountMap.get(record.id) ?? 0,
+        capacity: Math.round(((hourMap.get(record.id) ?? 0) / availableHours) * 100),
+      }),
+    ),
+    pagination: { page, pageSize, total: Number(totalResult[0]?.value ?? 0) },
+    stats: statsResult[0] ?? { total: 0, active: 0, invited: 0, admins: 0 },
     departments: departmentRows.map((item) => item.department),
   });
 }
 
+/**
+ * 创建组织用户，角色提升仅允许超级管理员执行。
+ *
+ * @param request 当前创建用户请求。
+ * @return 创建后的安全用户数据。
+ */
 export async function POST(request: Request) {
+  if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
   const currentUser = await getCurrentUser();
-
   if (!currentUser) return apiError("请先登录。", 401);
   if (!canManageUsers(currentUser)) return apiError("无权创建用户。", 403);
 
   let body: Record<string, unknown>;
-
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
     return apiError("请求内容不是有效的 JSON。");
   }
-
   const parsed = parseUserInput(body);
   if (!parsed.data || parsed.error) return apiError(parsed.error ?? "用户数据无效。");
-
   const data = parsed.data as UserInput;
-
-  if (currentUser.role !== "super_admin" && data.role === "super_admin") {
-    return apiError("只有超级管理员可以授予超级管理员角色。", 403);
+  if (currentUser.role !== "super_admin" && ["super_admin", "project_admin"].includes(data.role)) {
+    return apiError("只有超级管理员可以授予管理员角色。", 403);
   }
-
   if (data.status === "active" && !data.password) {
     return apiError("正常状态的账号需要设置初始密码。");
   }
 
+  const passwordHash = data.password ? await hashPassword(data.password) : null;
   try {
-    const db = getDb();
-    const [created] = await db
-      .insert(users)
-      .values({
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        department: data.department,
-        team: data.team,
-        role: data.role,
-        status: data.status,
-        passwordHash: data.password
-          ? await hashPassword(data.password)
-          : null,
-        projectCount: data.projectCount,
-        capacity: data.capacity,
-      })
-      .returning();
-
-    await db.insert(auditLogs).values({
-      actorId: currentUser.id,
-      action: "user.create",
-      entityType: "user",
-      entityId: created.id,
-      metadata: {
-        email: created.email,
-        role: created.role,
-        status: created.status,
-      },
+    const created = await getDb().transaction(async (tx) => {
+      const [user] = await tx
+        .insert(users)
+        .values({
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          department: data.department,
+          team: data.team,
+          role: data.role,
+          status: data.status,
+          passwordHash,
+        })
+        .returning();
+      await tx.insert(auditLogs).values({
+        actorId: currentUser.id,
+        action: "user.create",
+        entityType: "user",
+        entityId: user.id,
+        metadata: { email: user.email, role: user.role, status: user.status },
+      });
+      return user;
     });
-
-    return NextResponse.json({ data: serializeUser(created) }, { status: 201 });
+    return NextResponse.json(
+      { data: serializeUser({ ...created, projectCount: 0, capacity: 0 }) },
+      { status: 201 },
+    );
   } catch (error) {
     if (isUniqueViolation(error)) return apiError("该邮箱已被使用。", 409);
     throw error;

@@ -1,11 +1,21 @@
 import { eq } from "drizzle-orm";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { apiError, normalizeEmail } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  clearLoginFailures,
+  getLoginRetryAfter,
+  recordLoginFailure,
+} from "@/lib/login-rate-limit";
 import { verifyPassword } from "@/lib/password";
+import {
+  getRequestIp,
+  hasTrustedOrigin,
+  loginRateLimitKey,
+} from "@/lib/request-security";
 import {
   createSession,
   SESSION_COOKIE,
@@ -14,7 +24,34 @@ import {
 
 export const runtime = "nodejs";
 
+const DUMMY_PASSWORD_HASH =
+  "scrypt$Zmxvd2JvYXJkLWR1bW15LXNhbHQ$lCQIVaFxE_ck2vRKRgLnGXlhJdPtITQ73qLE0vBGT8ay46DnYhk1vaHAOrGaf7BCzZ8LsERuakacwxd-SXLdBA";
+
+/**
+ * 构造登录频率超限响应。
+ *
+ * @param retryAfterSeconds 建议客户端等待秒数。
+ * @return 带 Retry-After 响应头的 429 响应。
+ */
+function rateLimitResponse(retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    { error: "登录尝试过于频繁，请稍后再试。" },
+    {
+      status: 429,
+      headers: { "Retry-After": String(retryAfterSeconds) },
+    },
+  );
+}
+
+/**
+ * 校验账号密码并创建服务端会话。
+ *
+ * @param request 当前登录请求。
+ * @return 登录成功时返回用户摘要，失败时返回规范化错误。
+ */
 export async function POST(request: Request) {
+  if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
+
   let body: Record<string, unknown>;
 
   try {
@@ -31,6 +68,11 @@ export async function POST(request: Request) {
     return apiError("请输入邮箱和密码。");
   }
 
+  const ipAddress = getRequestIp(request);
+  const rateLimitKey = loginRateLimitKey(email, ipAddress);
+  const existingRetryAfter = await getLoginRetryAfter(rateLimitKey);
+  if (existingRetryAfter) return rateLimitResponse(existingRetryAfter);
+
   const db = getDb();
   const [user] = await db
     .select()
@@ -38,13 +80,18 @@ export async function POST(request: Request) {
     .where(eq(users.email, email))
     .limit(1);
 
-  const passwordMatches =
-    user?.passwordHash &&
-    (await verifyPassword(password, user.passwordHash));
+  const passwordMatches = await verifyPassword(
+    password,
+    user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
 
   if (!user || !passwordMatches) {
+    const retryAfter = await recordLoginFailure(rateLimitKey);
+    if (retryAfter) return rateLimitResponse(retryAfter);
     return apiError("邮箱或密码不正确。", 401);
   }
+
+  await clearLoginFailures(rateLimitKey);
 
   if (user.status !== "active") {
     return apiError(
@@ -55,12 +102,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const requestHeaders = await headers();
-  const forwardedFor = requestHeaders.get("x-forwarded-for");
   const session = await createSession({
     userId: user.id,
-    ipAddress: forwardedFor?.split(",")[0]?.trim() ?? null,
-    userAgent: requestHeaders.get("user-agent"),
+    ipAddress,
+    userAgent: request.headers.get("user-agent"),
     ttlMs: remember ? undefined : 12 * 60 * 60 * 1000,
   });
 

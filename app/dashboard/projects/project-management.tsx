@@ -40,9 +40,13 @@ type ProjectRecord = {
   progress: number;
   estimateHours: number;
   actualHours: number;
+  memberIds: string[];
+  memberCount: number;
+  canManage: boolean;
+  overdue: boolean;
 };
 
-type Owner = { id: string; name: string };
+type Person = { id: string; name: string; role: string };
 
 type ProjectForm = {
   name: string;
@@ -51,6 +55,7 @@ type ProjectForm = {
   color: string;
   status: ProjectStatus;
   ownerId: string;
+  memberIds: string[];
   startDate: string;
   dueDate: string;
 };
@@ -64,15 +69,27 @@ const emptyForm: ProjectForm = {
   color: colors[0],
   status: "planning",
   ownerId: "",
+  memberIds: [],
   startDate: "",
   dueDate: "",
 };
-const projectReferenceTime = Date.now();
 
+/**
+ * 将接口日期转换成日期输入框值。
+ *
+ * @param value ISO 日期或空值。
+ * @return YYYY-MM-DD 字符串。
+ */
 function dateInput(value: string | null) {
   return value ? value.slice(0, 10) : "";
 }
 
+/**
+ * 格式化项目卡片日期。
+ *
+ * @param value ISO 日期或空值。
+ * @return 中文日期文本。
+ */
 function displayDate(value: string | null) {
   if (!value) return "未设置";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -82,9 +99,16 @@ function displayDate(value: string | null) {
   }).format(new Date(value));
 }
 
+/**
+ * 渲染项目组合、成员关系和项目维护表单。
+ *
+ * @return 项目管理组件。
+ */
 export default function ProjectManagement() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
+  const [owners, setOwners] = useState<Person[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [canCreate, setCanCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | ProjectStatus>("");
   const [loading, setLoading] = useState(true);
@@ -95,6 +119,11 @@ export default function ProjectManagement() {
   const [form, setForm] = useState<ProjectForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * 加载当前用户可见项目和可选成员。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadProjects = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -102,12 +131,16 @@ export default function ProjectManagement() {
       const response = await fetch("/api/projects", { cache: "no-store" });
       const result = (await response.json()) as {
         data?: ProjectRecord[];
-        owners?: Owner[];
+        owners?: Person[];
+        people?: Person[];
+        canCreate?: boolean;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "项目加载失败。");
       setProjects(result.data ?? []);
       setOwners(result.owners ?? []);
+      setPeople(result.people ?? []);
+      setCanCreate(Boolean(result.canCreate));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "项目加载失败。");
     } finally {
@@ -144,25 +177,34 @@ export default function ProjectManagement() {
       active: projects.filter((project) => project.status === "active").length,
       completed: projects.filter((project) => project.status === "completed").length,
       atRisk: projects.filter(
-        (project) =>
-          project.dueDate &&
-          project.status !== "completed" &&
-          new Date(project.dueDate).getTime() < projectReferenceTime,
+        (project) => project.overdue,
       ).length,
     }),
     [projects],
   );
 
+  /**
+   * 打开新建项目表单。
+   *
+   * @return 无返回值。
+   */
   function openCreate() {
     setEditingId(null);
     setForm({
       ...emptyForm,
       ownerId: owners[0]?.id ?? "",
+      memberIds: owners[0]?.id ? [owners[0].id] : [],
       startDate: new Date().toISOString().slice(0, 10),
     });
     setModalOpen(true);
   }
 
+  /**
+   * 使用现有项目数据打开编辑表单。
+   *
+   * @param project 待编辑项目。
+   * @return 无返回值。
+   */
   function openEdit(project: ProjectRecord) {
     setEditingId(project.id);
     setForm({
@@ -172,12 +214,19 @@ export default function ProjectManagement() {
       color: project.color,
       status: project.status,
       ownerId: project.ownerId,
+      memberIds: project.memberIds,
       startDate: dateInput(project.startDate),
       dueDate: dateInput(project.dueDate),
     });
     setModalOpen(true);
   }
 
+  /**
+   * 保存项目资料和成员关系。
+   *
+   * @param event 项目表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
   async function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -203,6 +252,12 @@ export default function ProjectManagement() {
     }
   }
 
+  /**
+   * 确认后归档项目。
+   *
+   * @param project 待归档项目。
+   * @return 归档完成后的 Promise。
+   */
   async function archiveProject(project: ProjectRecord) {
     if (!window.confirm(`确定归档项目“${project.name}”吗？任务数据会保留。`)) return;
     setError("");
@@ -229,9 +284,11 @@ export default function ProjectManagement() {
           <h2>让目标、进度与投入保持一致</h2>
           <p>统一维护项目状态、负责人、交付周期和任务工时。</p>
         </div>
-        <button className="primary-action module-primary" type="button" onClick={openCreate}>
-          <Plus size={16} /> 新建项目
-        </button>
+        {canCreate && (
+          <button className="primary-action module-primary" type="button" onClick={openCreate}>
+            <Plus size={16} /> 新建项目
+          </button>
+        )}
       </section>
 
       <section className="project-stat-grid">
@@ -311,15 +368,17 @@ export default function ProjectManagement() {
                   </span>
                 </div>
                 <footer>
-                  <span><Users2 size={14} /> {project.taskCount} 项任务</span>
-                  <div>
-                    <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
-                      <Edit3 size={15} /> 编辑
-                    </button>
-                    <button type="button" onClick={() => archiveProject(project)} aria-label={`归档 ${project.name}`}>
-                      <Archive size={15} />
-                    </button>
-                  </div>
+                  <span><Users2 size={14} /> {project.memberCount} 位成员 · {project.taskCount} 项任务</span>
+                  {project.canManage && (
+                    <div>
+                      <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
+                        <Edit3 size={15} /> 编辑
+                      </button>
+                      <button type="button" onClick={() => archiveProject(project)} aria-label={`归档 ${project.name}`}>
+                        <Archive size={15} />
+                      </button>
+                    </div>
+                  )}
                 </footer>
               </article>
             );
@@ -363,11 +422,47 @@ export default function ProjectManagement() {
                 </label>
                 <label>
                   <span>负责人</span>
-                  <select required value={form.ownerId} onChange={(e) => setForm({ ...form, ownerId: e.target.value })}>
+                  <select required value={form.ownerId} onChange={(e) => {
+                    const ownerId = e.target.value;
+                    setForm({
+                      ...form,
+                      ownerId,
+                      memberIds: [...new Set([ownerId, ...form.memberIds].filter(Boolean))],
+                    });
+                  }}>
                     <option value="">请选择</option>
                     {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
                   </select>
                 </label>
+                <fieldset className="form-wide project-member-fieldset">
+                  <legend>项目成员（可多选）</legend>
+                  <div className="project-member-picker">
+                    {people.map((person) => {
+                      const checked = form.memberIds.includes(person.id);
+                      const isOwner = form.ownerId === person.id;
+                      return (
+                        <label key={person.id}>
+                          <input
+                            type="checkbox"
+                            checked={checked || isOwner}
+                            disabled={isOwner}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                memberIds: event.target.checked
+                                  ? [...new Set([...form.memberIds, person.id])]
+                                  : form.memberIds.filter((id) => id !== person.id),
+                              })
+                            }
+                          />
+                          <span>{person.name}</span>
+                          <small>{isOwner ? "负责人" : person.role === "viewer" ? "只读" : "成员"}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p>负责人会自动加入；任务负责人只能从这里的非只读成员中选择。</p>
+                </fieldset>
                 <label>
                   <span>开始日期</span>
                   <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />

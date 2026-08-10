@@ -5,6 +5,11 @@ import type { FormEvent } from "react";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+/**
+ * 渲染登录表单并管理登录请求状态。
+ *
+ * @return 登录表单组件。
+ */
 export default function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState(
@@ -22,6 +27,12 @@ export default function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  /**
+   * 提交邮箱、密码和记住登录选项。
+   *
+   * @param event 登录表单提交事件。
+   * @return 登录请求完成后的 Promise。
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -44,7 +55,7 @@ export default function LoginForm() {
         return;
       }
 
-      router.push("/dashboard/users");
+      router.push("/dashboard/workbench");
       router.refresh();
     } catch {
       setError("网络连接异常，请检查后重试。");

@@ -74,8 +74,6 @@ type UserForm = {
   role: UserRole;
   status: UserStatus;
   password: string;
-  projectCount: number;
-  capacity: number;
 };
 
 const emptyForm: UserForm = {
@@ -87,8 +85,6 @@ const emptyForm: UserForm = {
   role: "member",
   status: "invited",
   password: "",
-  projectCount: 0,
-  capacity: 0,
 };
 
 const roleCards: Array<{
@@ -132,10 +128,22 @@ const permissionRows = [
   "系统审计",
 ];
 
+/**
+ * 提取用户名首字作为头像文本。
+ *
+ * @param name 用户姓名。
+ * @return 单字符头像文本。
+ */
 function userInitials(name: string) {
   return name.trim().slice(0, 1) || "用";
 }
 
+/**
+ * 格式化用户最后活跃时间。
+ *
+ * @param value ISO 时间或空值。
+ * @return 相对时间或日期时间文本。
+ */
 function formatLastSeen(value: string | null) {
   if (!value) return "从未登录";
   const diff = Math.max(0, Date.now() - new Date(value).getTime());
@@ -151,6 +159,13 @@ function formatLastSeen(value: string | null) {
   }).format(new Date(value));
 }
 
+/**
+ * 渲染用户分页、角色矩阵和账号维护表单。
+ *
+ * @param currentUserId 当前登录用户 ID。
+ * @param currentUserRole 当前登录用户角色。
+ * @return 用户管理组件。
+ */
 export default function UserManagement({
   currentUserId,
   currentUserRole,
@@ -182,6 +197,11 @@ export default function UserManagement({
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * 按当前筛选和分页加载用户及派生指标。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadUsers = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -239,12 +259,23 @@ export default function UserManagement({
   );
   const totalPages = Math.max(1, Math.ceil(total / 20));
 
+  /**
+   * 打开新建用户表单。
+   *
+   * @return 无返回值。
+   */
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
     setModalMode("create");
   }
 
+  /**
+   * 使用现有用户资料打开编辑表单。
+   *
+   * @param user 待编辑用户。
+   * @return 无返回值。
+   */
   function openEdit(user: ManagedUser) {
     setEditingId(user.id);
     setForm({
@@ -256,12 +287,16 @@ export default function UserManagement({
       role: user.role,
       status: user.status,
       password: "",
-      projectCount: user.projectCount,
-      capacity: user.capacity,
     });
     setModalMode("edit");
   }
 
+  /**
+   * 创建或更新组织用户。
+   *
+   * @param event 用户表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
   async function submitUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -295,6 +330,12 @@ export default function UserManagement({
     }
   }
 
+  /**
+   * 停用或恢复允许维护的用户账号。
+   *
+   * @param user 目标用户。
+   * @return 状态更新完成后的 Promise。
+   */
   async function toggleUserStatus(user: ManagedUser) {
     const nextStatus: UserStatus =
       user.status === "disabled" ? "active" : "disabled";
@@ -321,6 +362,12 @@ export default function UserManagement({
     }
   }
 
+  /**
+   * 删除没有业务历史的停用用户。
+   *
+   * @param user 目标用户。
+   * @return 删除完成后的 Promise。
+   */
   async function deleteUser(user: ManagedUser) {
     if (
       !window.confirm(
@@ -345,6 +392,12 @@ export default function UserManagement({
     }
   }
 
+  /**
+   * 切换当前页用户的批量选择状态。
+   *
+   * @param id 用户 ID。
+   * @return 无返回值。
+   */
   function toggleSelected(id: string) {
     setSelectedIds((current) =>
       current.includes(id)
@@ -569,22 +622,26 @@ export default function UserManagement({
                               className="row-actions"
                               onClick={(event) => event.stopPropagation()}
                             >
-                              <button
-                                type="button"
-                                title="编辑用户"
-                                aria-label={`编辑 ${user.name}`}
-                                onClick={() => openEdit(user)}
-                              >
-                                <Edit3 size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                title={user.status === "disabled" ? "恢复账号" : "停用账号"}
-                                aria-label={user.status === "disabled" ? `恢复 ${user.name}` : `停用 ${user.name}`}
-                                onClick={() => toggleUserStatus(user)}
-                              >
-                                {user.status === "disabled" ? <UserCheck size={15} /> : <UserX size={15} />}
-                              </button>
+                              {(currentUserRole === "super_admin" || !["super_admin", "project_admin"].includes(user.role)) && (
+                                <>
+                                  <button
+                                    type="button"
+                                    title="编辑用户"
+                                    aria-label={`编辑 ${user.name}`}
+                                    onClick={() => openEdit(user)}
+                                  >
+                                    <Edit3 size={15} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title={user.status === "disabled" ? "恢复账号" : "停用账号"}
+                                    aria-label={user.status === "disabled" ? `恢复 ${user.name}` : `停用 ${user.name}`}
+                                    onClick={() => toggleUserStatus(user)}
+                                  >
+                                    {user.status === "disabled" ? <UserCheck size={15} /> : <UserX size={15} />}
+                                  </button>
+                                </>
+                              )}
                               <button type="button" aria-label="更多操作">
                                 <MoreHorizontal size={16} />
                               </button>
@@ -636,7 +693,7 @@ export default function UserManagement({
                     <i /> {statusLabels[selectedUser.status]}
                   </span>
                 </header>
-                <div className="detail-actions">
+                {(currentUserRole === "super_admin" || !["super_admin", "project_admin"].includes(selectedUser.role)) && <div className="detail-actions">
                   <button className="detail-primary" type="button" onClick={() => openEdit(selectedUser)}>
                     <Edit3 size={15} /> 编辑资料
                   </button>
@@ -648,7 +705,7 @@ export default function UserManagement({
                     <UserX size={15} />
                     {selectedUser.status === "disabled" ? "恢复" : "停用"}
                   </button>
-                </div>
+                </div>}
                 <dl className="user-facts">
                   <div><dt>所属部门</dt><dd>{selectedUser.department}</dd></div>
                   <div><dt>所属团队</dt><dd>{selectedUser.team}</dd></div>
@@ -658,8 +715,8 @@ export default function UserManagement({
                 </dl>
                 <section className="capacity-panel">
                   <header><b>本迭代容量</b><span>{selectedUser.capacity}%</span></header>
-                  <div><i style={{ width: `${selectedUser.capacity}%` }} /></div>
-                  <p>参与 {selectedUser.projectCount} 个项目 · 每周可用容量</p>
+                  <div><i style={{ width: `${Math.min(100, selectedUser.capacity)}%` }} /></div>
+                  <p>参与 {selectedUser.projectCount} 个项目 · 最近 7 天已登记工时利用率</p>
                 </section>
                 <section className="recent-activity">
                   <h4>账号概况</h4>
@@ -830,7 +887,9 @@ export default function UserManagement({
                     {currentUserRole === "super_admin" && (
                       <option value="super_admin">超级管理员</option>
                     )}
-                    <option value="project_admin">项目管理员</option>
+                    {currentUserRole === "super_admin" && (
+                      <option value="project_admin">项目管理员</option>
+                    )}
                     <option value="member">研发成员</option>
                     <option value="viewer">只读访客</option>
                   </select>
@@ -846,29 +905,9 @@ export default function UserManagement({
                     <option value="disabled">已停用</option>
                   </select>
                 </label>
-                <label>
-                  <span>参与项目数</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="999"
-                    value={form.projectCount}
-                    onChange={(event) => setForm({ ...form, projectCount: Number(event.target.value) })}
-                  />
-                </label>
-                <label>
-                  <span>容量使用率（%）</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={form.capacity}
-                    onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })}
-                  />
-                </label>
               </div>
               <p className="form-hint">
-                待激活账号可以先不设置密码；设为“正常”后必须配置登录密码。
+                待激活账号可以先不设置密码；设为“正常”后必须配置至少 10 位且同时包含字母和数字的密码。项目数和容量由项目成员及工时明细自动计算。
               </p>
               <footer>
                 <button type="button" onClick={() => setModalMode(null)}>取消</button>

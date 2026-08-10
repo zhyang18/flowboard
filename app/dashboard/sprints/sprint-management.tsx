@@ -49,9 +49,16 @@ type SprintRecord = {
   estimateHours: number;
   actualHours: number;
   tasks: SprintTask[];
+  canManage: boolean;
 };
 
-type ProjectOption = { id: string; name: string; code: string; color: string };
+type ProjectOption = {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
+  canManage: boolean;
+};
 type CandidateTask = SprintTask & { projectId: string };
 type SprintForm = {
   projectId: string;
@@ -73,10 +80,22 @@ const emptyForm: SprintForm = {
   endDate: "",
 };
 
+/**
+ * 将接口日期转换成日期输入框值。
+ *
+ * @param value ISO 日期。
+ * @return YYYY-MM-DD 字符串。
+ */
 function inputDate(value: string) {
   return value.slice(0, 10);
 }
 
+/**
+ * 格式化迭代周期日期。
+ *
+ * @param value ISO 日期。
+ * @return 简短中文日期文本。
+ */
 function displayDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -84,9 +103,15 @@ function displayDate(value: string) {
   }).format(new Date(value));
 }
 
+/**
+ * 渲染迭代列表、容量和任务范围管理。
+ *
+ * @return 迭代管理组件。
+ */
 export default function SprintManagement() {
   const [sprints, setSprints] = useState<SprintRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [canCreate, setCanCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | SprintStatus>("");
   const [loading, setLoading] = useState(true);
@@ -101,6 +126,11 @@ export default function SprintManagement() {
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [planningLoading, setPlanningLoading] = useState(false);
 
+  /**
+   * 加载可见迭代及项目权限。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadSprints = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -109,11 +139,13 @@ export default function SprintManagement() {
       const result = (await response.json()) as {
         data?: SprintRecord[];
         projects?: ProjectOption[];
+        canCreate?: boolean;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "迭代加载失败。");
       setSprints(result.data ?? []);
       setProjects(result.projects ?? []);
+      setCanCreate(Boolean(result.canCreate));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "迭代加载失败。");
     } finally {
@@ -155,6 +187,11 @@ export default function SprintManagement() {
     [sprints],
   );
 
+  /**
+   * 打开新建迭代表单并生成默认周期。
+   *
+   * @return 无返回值。
+   */
   function openCreate() {
     const start = new Date();
     const end = new Date(start);
@@ -162,13 +199,19 @@ export default function SprintManagement() {
     setEditingId(null);
     setForm({
       ...emptyForm,
-      projectId: projects[0]?.id ?? "",
+      projectId: projects.find((project) => project.canManage)?.id ?? "",
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
     });
     setFormOpen(true);
   }
 
+  /**
+   * 使用现有迭代数据打开编辑表单。
+   *
+   * @param sprint 待编辑迭代。
+   * @return 无返回值。
+   */
   function openEdit(sprint: SprintRecord) {
     setEditingId(sprint.id);
     setForm({
@@ -183,6 +226,12 @@ export default function SprintManagement() {
     setFormOpen(true);
   }
 
+  /**
+   * 创建或更新迭代。
+   *
+   * @param event 迭代表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
   async function saveSprint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -208,6 +257,12 @@ export default function SprintManagement() {
     }
   }
 
+  /**
+   * 加载同项目任务并打开迭代规划。
+   *
+   * @param sprint 待规划迭代。
+   * @return 任务加载完成后的 Promise。
+   */
   async function openPlanning(sprint: SprintRecord) {
     setPlanningSprint(sprint);
     setPlanningLoading(true);
@@ -236,6 +291,11 @@ export default function SprintManagement() {
     }
   }
 
+  /**
+   * 用当前勾选结果替换迭代任务范围。
+   *
+   * @return 保存完成后的 Promise。
+   */
   async function savePlanning() {
     if (!planningSprint) return;
     setPlanningLoading(true);
@@ -261,6 +321,12 @@ export default function SprintManagement() {
     }
   }
 
+  /**
+   * 确认后删除非进行中迭代。
+   *
+   * @param sprint 待删除迭代。
+   * @return 删除完成后的 Promise。
+   */
   async function deleteSprint(sprint: SprintRecord) {
     if (!window.confirm(`确定删除迭代“${sprint.name}”吗？任务会回到未规划状态。`)) {
       return;
@@ -288,9 +354,11 @@ export default function SprintManagement() {
           <h2>用短周期稳定推进交付</h2>
           <p>规划迭代目标、容量和任务范围，持续观察完成率与工时消耗。</p>
         </div>
-        <button className="primary-action module-primary" type="button" onClick={openCreate}>
-          <Plus size={16} /> 新建迭代
-        </button>
+        {canCreate && (
+          <button className="primary-action module-primary" type="button" onClick={openCreate}>
+            <Plus size={16} /> 新建迭代
+          </button>
+        )}
       </section>
 
       <section className="sprint-stat-grid">
@@ -353,13 +421,15 @@ export default function SprintManagement() {
                   <span><small>预估</small><b>{sprint.estimateHours.toFixed(1)}h</b></span>
                   <span><small>实际</small><b>{sprint.actualHours.toFixed(1)}h</b></span>
                 </div>
-                <footer>
-                  <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划任务</button>
-                  <div>
-                    <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
-                    <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
-                  </div>
-                </footer>
+                {sprint.canManage && (
+                  <footer>
+                    <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划任务</button>
+                    <div>
+                      <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                      <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
+                    </div>
+                  </footer>
+                )}
               </article>
             );
           })}
@@ -377,7 +447,7 @@ export default function SprintManagement() {
             </header>
             <form onSubmit={saveSprint}>
               <div className="workspace-form-grid">
-                <label><span>所属项目</span><select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}><option value="">请选择</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
+                <label><span>所属项目</span><select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}><option value="">请选择</option>{projects.filter((project) => project.canManage).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
                 <label><span>迭代名称</span><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：Sprint 2026-08" /></label>
                 <label><span>状态</span><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as SprintStatus })}>{Object.entries(sprintStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                 <label><span>团队容量（小时）</span><input type="number" min="0" step="1" value={form.capacityHours} onChange={(e) => setForm({ ...form, capacityHours: Number(e.target.value) })} /></label>

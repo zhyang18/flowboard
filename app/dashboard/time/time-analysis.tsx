@@ -33,9 +33,17 @@ type WorkLogRecord = {
   workDate: string;
   durationHours: number;
   note: string;
+  canDelete: boolean;
 };
-type ProjectOption = { id: string; name: string; code: string; color: string };
-type UserOption = { id: string; name: string };
+type ProjectOption = {
+  id: string;
+  name: string;
+  code: string;
+  color: string;
+  canLog: boolean;
+  canManage: boolean;
+};
+type UserOption = { id: string; name: string; projectIds: string[] };
 type TaskOption = { id: string; title: string; projectId: string };
 type WorkLogForm = {
   projectId: string;
@@ -52,13 +60,18 @@ const initialFromDate = new Date(timeReferenceDate);
 initialFromDate.setDate(initialFromDate.getDate() - 29);
 const initialFrom = initialFromDate.toISOString().slice(0, 10);
 
+/**
+ * 渲染工时筛选、趋势、明细和登记表单。
+ *
+ * @return 工时分析组件。
+ */
 export default function TimeAnalysis() {
   const [logs, setLogs] = useState<WorkLogRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [tasks, setTasks] = useState<TaskOption[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
-  const [canManage, setCanManage] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [userId, setUserId] = useState("");
   const [from, setFrom] = useState(initialFrom);
@@ -78,6 +91,11 @@ export default function TimeAnalysis() {
     note: "",
   });
 
+  /**
+   * 按项目、成员和日期范围加载工时数据。
+   *
+   * @return 加载完成后的 Promise。
+   */
   const loadLogs = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -94,7 +112,7 @@ export default function TimeAnalysis() {
         users?: UserOption[];
         tasks?: TaskOption[];
         currentUserId?: string;
-        canManage?: boolean;
+        canCreate?: boolean;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "工时记录加载失败。");
@@ -103,7 +121,7 @@ export default function TimeAnalysis() {
       setUsers(result.users ?? []);
       setTasks(result.tasks ?? []);
       setCurrentUserId(result.currentUserId ?? "");
-      setCanManage(Boolean(result.canManage));
+      setCanCreate(Boolean(result.canCreate));
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "工时记录加载失败。",
@@ -165,13 +183,26 @@ export default function TimeAnalysis() {
   }, [visibleLogs]);
   const dailyMax = Math.max(8, ...daily.map((item) => item.hours));
 
+  /**
+   * 在当前用户可登记的项目中打开工时表单。
+   *
+   * @return 无返回值。
+   */
   function openCreate() {
-    const selectedProjectId = projectId || projects[0]?.id || "";
+    const writableProject =
+      projects.find((project) => project.id === projectId && project.canLog) ??
+      projects.find((project) => project.canLog);
+    const selectedProjectId = writableProject?.id ?? "";
     const selectedTask = tasks.find((task) => task.projectId === selectedProjectId);
+    const selectedUserId =
+      writableProject?.canManage &&
+      users.some((user) => user.id === userId && user.projectIds.includes(selectedProjectId))
+        ? userId
+        : currentUserId;
     setForm({
       projectId: selectedProjectId,
       taskId: selectedTask?.id ?? "",
-      userId: userId || currentUserId,
+      userId: selectedUserId,
       workDate: initialTo,
       durationHours: 1,
       note: "",
@@ -179,6 +210,12 @@ export default function TimeAnalysis() {
     setModalOpen(true);
   }
 
+  /**
+   * 保存工时明细并刷新任务实际工时。
+   *
+   * @param event 工时表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
   async function saveLog(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -201,6 +238,12 @@ export default function TimeAnalysis() {
     }
   }
 
+  /**
+   * 确认后删除有权限维护的工时记录。
+   *
+   * @param log 待删除工时记录。
+   * @return 删除完成后的 Promise。
+   */
   async function deleteLog(log: WorkLogRecord) {
     if (!window.confirm(`确定删除这条 ${log.durationHours} 小时的记录吗？`)) return;
     try {
@@ -226,9 +269,11 @@ export default function TimeAnalysis() {
           <h2>看清时间花在哪里</h2>
           <p>按项目、成员和日期分析实际投入，每条记录自动累加到任务工时。</p>
         </div>
-        <button className="primary-action module-primary" type="button" onClick={openCreate}>
-          <Plus size={16} /> 登记工时
-        </button>
+        {canCreate && (
+          <button className="primary-action module-primary" type="button" onClick={openCreate}>
+            <Plus size={16} /> 登记工时
+          </button>
+        )}
       </section>
 
       <section className="time-stat-grid">
@@ -289,7 +334,7 @@ export default function TimeAnalysis() {
                   <td><small><i style={{ background: log.projectColor }} /> {log.projectCode}</small><b>{log.taskTitle}</b></td>
                   <td>{log.note || "—"}</td>
                   <td><strong>{log.durationHours.toFixed(1)}h</strong></td>
-                  <td>{(canManage || log.userId === currentUserId) && <button type="button" onClick={() => void deleteLog(log)} aria-label={`删除 ${log.taskTitle} 的工时记录`}><Trash2 size={14} /></button>}</td>
+                  <td>{log.canDelete && <button type="button" onClick={() => void deleteLog(log)} aria-label={`删除 ${log.taskTitle} 的工时记录`}><Trash2 size={14} /></button>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -303,9 +348,9 @@ export default function TimeAnalysis() {
             <header><div><span className="eyebrow">登记工时</span><h2 id="work-log-title">记录实际投入</h2></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button></header>
             <form onSubmit={saveLog}>
               <div className="workspace-form-grid">
-                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId)?.id ?? "" }); }}><option value="">请选择</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
+                <label><span>项目</span><select required value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; const nextProject = projects.find((project) => project.id === nextProjectId); setForm({ ...form, projectId: nextProjectId, taskId: tasks.find((task) => task.projectId === nextProjectId)?.id ?? "", userId: nextProject?.canManage && users.some((user) => user.id === form.userId && user.projectIds.includes(nextProjectId)) ? form.userId : currentUserId }); }}><option value="">请选择</option>{projects.filter((project) => project.canLog).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
                 <label><span>任务</span><select required value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })}><option value="">请选择</option>{tasks.filter((task) => task.projectId === form.projectId).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select></label>
-                {canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>}
+                {projects.find((project) => project.id === form.projectId)?.canManage && <label><span>成员</span><select required value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>{users.filter((user) => user.projectIds.includes(form.projectId)).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>}
                 <label><span>工作日期</span><input required type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} /></label>
                 <label><span>实际工时（小时）</span><input required type="number" min="0.1" max="24" step="0.5" value={form.durationHours} onChange={(e) => setForm({ ...form, durationHours: Number(e.target.value) })} /></label>
                 <label className="form-wide"><span>工作说明</span><textarea rows={4} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="简要说明完成了什么、遇到什么问题。" /></label>

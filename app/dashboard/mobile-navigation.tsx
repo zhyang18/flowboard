@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { UserRole } from "@/db/schema";
 
 const items = [
   { label: "工作台", href: "/dashboard/workbench", icon: LayoutDashboard },
@@ -24,12 +25,24 @@ const items = [
   { label: "设置", href: "/dashboard/settings", icon: Settings },
 ];
 
-export default function MobileNavigation() {
+/**
+ * 渲染按角色过滤的移动端底部导航。
+ *
+ * @param userRole 当前登录用户角色。
+ * @return 移动端导航组件。
+ */
+export default function MobileNavigation({ userRole }: { userRole: UserRole }) {
   const pathname = usePathname();
+  const visibleItems = items.filter(
+    (item) =>
+      item.href !== "/dashboard/users" ||
+      userRole === "super_admin" ||
+      userRole === "project_admin",
+  );
 
   return (
     <nav className="mobile-navigation" aria-label="移动端主导航">
-      {items.map((item) => (
+      {visibleItems.map((item) => (
         <Link
           className={pathname.startsWith(item.href) ? "active" : ""}
           href={item.href}

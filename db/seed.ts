@@ -3,6 +3,7 @@ import { loadEnvConfig } from "@next/env";
 import { getDb } from "./index";
 import {
   projects,
+  projectMembers,
   sprints,
   tasks,
   users,
@@ -12,6 +13,8 @@ import {
 import { hashPassword } from "../lib/password";
 
 loadEnvConfig(process.cwd());
+
+const seedDemoData = process.env.SEED_DEMO_DATA === "true";
 
 const seedUsers = [
   {
@@ -104,12 +107,23 @@ const seedUsers = [
   },
 ];
 
+/**
+ * 初始化管理员、工作空间设置及可选的本地演示数据。
+ *
+ * @return 数据初始化完成后的 Promise。
+ */
 async function seed() {
   const db = getDb();
+  if (!seedDemoData && (!process.env.SEED_ADMIN_EMAIL || !process.env.SEED_ADMIN_PASSWORD)) {
+    throw new Error(
+      "Production-safe seed requires SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD. Set SEED_DEMO_DATA=true only for local demo data.",
+    );
+  }
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin@123456";
   const adminPasswordHash = await hashPassword(adminPassword);
 
-  for (const [index, user] of seedUsers.entries()) {
+  const selectedSeedUsers = seedDemoData ? seedUsers : seedUsers.slice(0, 1);
+  for (const [index, user] of selectedSeedUsers.entries()) {
     const [existing] = await db
       .select({ id: users.id })
       .from(users)
@@ -125,11 +139,23 @@ async function seed() {
     });
   }
 
-  const userRows = await db.select({ id: users.id, email: users.email }).from(users);
+  const userRows = await db
+    .select({ id: users.id, email: users.email, role: users.role })
+    .from(users);
   const userId = (email: string) =>
     userRows.find((user) => user.email === email)?.id ?? userRows[0]?.id;
   const adminId = userId(seedUsers[0].email);
   if (!adminId) throw new Error("Seed admin was not created.");
+
+  if (!seedDemoData) {
+    const [settings] = await db
+      .select({ id: workspaceSettings.id })
+      .from(workspaceSettings)
+      .limit(1);
+    if (!settings) await db.insert(workspaceSettings).values({});
+    console.log("Production-safe seed complete: admin and workspace settings only.");
+    return;
+  }
 
   const projectSeeds = [
     {
@@ -174,7 +200,7 @@ async function seed() {
   }
 
   const projectRows = await db
-    .select({ id: projects.id, code: projects.code })
+    .select({ id: projects.id, code: projects.code, ownerId: projects.ownerId })
     .from(projects);
   const projectId = (code: string) =>
     projectRows.find((project) => project.code === code)?.id;
@@ -278,6 +304,7 @@ async function seed() {
       title: tasks.title,
       projectId: tasks.projectId,
       assigneeId: tasks.assigneeId,
+      reporterId: tasks.reporterId,
     })
     .from(tasks);
 
@@ -393,6 +420,32 @@ async function seed() {
         workDate: logSeed.workDate,
       });
     }
+  }
+
+  const membershipMap = new Map<string, "manager" | "member" | "viewer">();
+  for (const project of projectRows) {
+    membershipMap.set(`${project.id}:${project.ownerId}`, "manager");
+  }
+  for (const task of refreshedTasks) {
+    for (const memberId of [task.assigneeId, task.reporterId]) {
+      if (!memberId) continue;
+      const user = userRows.find((item) => item.id === memberId);
+      const key = `${task.projectId}:${memberId}`;
+      if (!membershipMap.has(key)) {
+        membershipMap.set(key, user?.role === "viewer" ? "viewer" : "member");
+      }
+    }
+  }
+  if (membershipMap.size) {
+    await db
+      .insert(projectMembers)
+      .values(
+        [...membershipMap.entries()].map(([key, role]) => {
+          const [projectId, userId] = key.split(":");
+          return { projectId, userId, role };
+        }),
+      )
+      .onConflictDoNothing();
   }
 
   const [settings] = await db.select({ id: workspaceSettings.id }).from(workspaceSettings).limit(1);
