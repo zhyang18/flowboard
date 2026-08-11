@@ -7,6 +7,7 @@ import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import {
+  hasTasksFromOtherSprint,
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "@/lib/sprints";
@@ -63,7 +64,11 @@ export async function PUT(request: Request, context: RouteContext) {
       }
       if (taskIds.length) {
         const selected = await tx
-          .select({ id: tasks.id, sourceSprintStatus: sprints.status })
+          .select({
+            id: tasks.id,
+            sprintId: tasks.sprintId,
+            sourceSprintStatus: sprints.status,
+          })
           .from(tasks)
           .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
           .where(and(inArray(tasks.id, taskIds), eq(tasks.projectId, sprint.projectId)));
@@ -72,6 +77,9 @@ export async function PUT(request: Request, context: RouteContext) {
         }
         if (selected.some((task) => isCompletedSprintStatus(task.sourceSprintStatus))) {
           throw new Error("COMPLETED_SOURCE_SPRINT");
+        }
+        if (hasTasksFromOtherSprint(selected.map((task) => task.sprintId), id)) {
+          throw new Error("TASK_ALREADY_PLANNED");
         }
       }
 
@@ -83,7 +91,7 @@ export async function PUT(request: Request, context: RouteContext) {
         await tx
           .update(tasks)
           .set({ sprintId: id, updatedAt: new Date() })
-          .where(inArray(tasks.id, taskIds));
+          .where(and(inArray(tasks.id, taskIds), eq(tasks.projectId, sprint.projectId)));
       }
       await tx.insert(auditLogs).values({
         actorId: currentUser.id,
@@ -103,6 +111,9 @@ export async function PUT(request: Request, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "INVALID_TASK_SCOPE") {
       return apiError("只能加入同一项目中的有效任务。");
+    }
+    if (error instanceof Error && error.message === "TASK_ALREADY_PLANNED") {
+      return apiError("所选任务已属于其他迭代，请先从原迭代移出。", 409);
     }
     throw error;
   }

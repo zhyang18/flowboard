@@ -1056,6 +1056,11 @@ textarea {
   color: #2479d8;
 }
 
+.notification-item.rejected .notification-kind-icon {
+  background: var(--red-100);
+  color: var(--red-700);
+}
+
 .notification-item.overrun .notification-kind-icon,
 .notification-item.due_soon .notification-kind-icon {
   background: #fff8e8;
@@ -3239,7 +3244,8 @@ textarea {
   white-space: nowrap;
 }
 
-.project-card > p {
+.project-card > p,
+.project-card > .rich-text-content {
   min-height: 50px;
   margin: 0;
   padding: 0 16px;
@@ -3831,13 +3837,33 @@ textarea {
   border-radius: 50%;
 }
 
+.task-sprint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--blue-50);
+  color: var(--blue-700);
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.task-sprint.completed {
+  background: var(--green-100);
+  color: var(--green-700);
+}
+
 .kanban-task h3 {
   margin: 6px 0 0;
   font-size: 11px;
   line-height: 1.45;
 }
 
-.kanban-task > p {
+.kanban-task > p,
+.kanban-task > .rich-text-content {
   display: -webkit-box;
   overflow: hidden;
   margin: 6px 0 0;
@@ -4159,6 +4185,195 @@ textarea {
   font-weight: 700;
 }
 
+.rich-text-content {
+  display: grid;
+  gap: 6px;
+  color: inherit;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.rich-text-content.empty {
+  color: var(--ink-400);
+}
+
+.rich-text-line {
+  display: block;
+}
+
+.rich-text-image {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f5f7fa;
+}
+
+.rich-text-image img {
+  width: 100%;
+  height: auto;
+  max-height: 420px;
+  display: block;
+  object-fit: contain;
+}
+
+.attachment-editor {
+  display: grid;
+  gap: 9px;
+}
+
+.attachment-editor textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.attachment-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.attachment-toolbar label {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--blue-200);
+  border-radius: 7px;
+  background: var(--blue-50);
+  color: var(--blue-700);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.attachment-toolbar label.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.attachment-toolbar input {
+  display: none;
+}
+
+.attachment-toolbar > span,
+.attachment-state {
+  color: var(--ink-400);
+  font-size: 8px;
+}
+
+.attachment-error {
+  color: var(--red-700);
+  font-size: 8px;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 5px;
+}
+
+.attachment-list > div {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.attachment-list a {
+  overflow: hidden;
+  color: var(--ink-700);
+  font-size: 8px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-list small {
+  color: var(--ink-400);
+  font-size: 7px;
+}
+
+.attachment-list button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--red-700);
+}
+
+.rich-text-preview {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #fafbfd;
+}
+
+.rich-text-preview > small {
+  color: var(--ink-400);
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.attachment-viewer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.attachment-viewer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--blue-700);
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.task-rejection-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid #f1bdc5;
+  border-radius: 7px;
+  background: #fff6f7;
+  color: var(--ink-600);
+  font-size: 8px;
+}
+
+.task-rejection-note > header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--red-700);
+  font-weight: 800;
+}
+
+.task-reject-modal {
+  width: min(720px, 100%);
+}
+
+.task-reject-modal form {
+  padding: 18px;
+}
+
 .sprint-card > footer button:hover {
   background: #edf3fa;
   color: var(--blue-700);
@@ -4206,6 +4421,16 @@ textarea {
 .planning-task-list label.selected {
   border-color: #9bc5fb;
   background: var(--blue-50);
+}
+
+.planning-task-list label.blocked {
+  background: #f6f8fa;
+  color: var(--ink-400);
+  cursor: not-allowed;
+}
+
+.planning-task-list label.blocked small {
+  color: var(--orange-700);
 }
 
 .planning-task-list input {
@@ -5126,7 +5351,8 @@ textarea {
     padding-inline: 14px;
   }
 
-  .project-card > p {
+  .project-card > p,
+  .project-card > .rich-text-content {
     min-height: 0;
   }
 

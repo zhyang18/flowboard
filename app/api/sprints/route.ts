@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, projectMembers, projects, sprints, tasks } from "@/db/schema";
@@ -7,12 +7,15 @@ import {
   getProjectAccess,
   projectVisibilityCondition,
 } from "@/lib/authorization";
-import { apiError, isUniqueViolation, textValue } from "@/lib/api";
+import {
+  apiError,
+  isConstraintViolation,
+  isUniqueViolation,
+  textValue,
+} from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
-import { hasOtherActiveSprint } from "@/lib/sprints";
 import {
-  isSprintStatus,
   parseDate,
   safeHours,
   serializeSprint,
@@ -160,7 +163,10 @@ export async function POST(request: Request) {
   const projectId = typeof body.projectId === "string" ? body.projectId : "";
   const name = textValue(body.name, 80);
   const goal = textValue(body.goal, 500);
-  const status = isSprintStatus(body.status) ? body.status : "planned";
+  if ("status" in body && body.status !== "planned") {
+    return apiError("新迭代必须从未开始状态创建。", 409);
+  }
+  const status = "planned" as const;
   const capacityHours = safeHours(body.capacityHours);
   const startDate = parseDate(body.startDate);
   const endDate = parseDate(body.endDate);
@@ -176,19 +182,6 @@ export async function POST(request: Request) {
 
   try {
     const created = await getDb().transaction(async (tx) => {
-      if (status === "active") {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`active-sprint:${projectId}`}))`,
-        );
-        const activeSprints = await tx
-          .select({ id: sprints.id })
-          .from(sprints)
-          .where(and(eq(sprints.projectId, projectId), eq(sprints.status, "active")))
-          .limit(2);
-        if (hasOtherActiveSprint(activeSprints.map((sprint) => sprint.id), null)) {
-          throw new Error("ACTIVE_SPRINT_EXISTS");
-        }
-      }
       const [sprint] = await tx
         .insert(sprints)
         .values({ projectId, name, goal, status, capacityHours, startDate, endDate })
@@ -204,7 +197,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ data: serializeSprint(created) }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "ACTIVE_SPRINT_EXISTS") {
+    if (isConstraintViolation(error, "sprints_one_active_per_project")) {
       return apiError("同一项目只能有一个进行中的迭代。", 409);
     }
     if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);

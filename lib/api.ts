@@ -57,3 +57,19 @@ export function isUniqueViolation(error: unknown) {
     error.code === "23505"
   );
 }
+
+/**
+ * 判断数据库错误是否命中了指定约束。
+ *
+ * @param error 捕获到的未知错误。
+ * @param constraintName PostgreSQL 约束或索引名称。
+ * @return 错误携带匹配约束名称时返回 true。
+ */
+export function isConstraintViolation(error: unknown, constraintName: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "constraint_name" in error &&
+    error.constraint_name === constraintName
+  );
+}

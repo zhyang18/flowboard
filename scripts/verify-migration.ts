@@ -26,6 +26,8 @@ async function main(): Promise<void> {
         testerColumn: boolean;
         testerRoleValues: number;
         requiredConstraints: number;
+        requiredSprintIndexes: number;
+        collaborationTables: number;
         activeUserCount: number;
         projectMemberCount: number;
         activeProjectCount: number;
@@ -67,11 +69,31 @@ async function main(): Promise<void> {
           where conname in (
             'sprints_capacity_hours_check',
             'sprints_dates_check',
+            'attachments_size_bytes_check',
+            'attachments_single_owner_check',
             'tasks_estimate_hours_check',
             'tasks_actual_hours_check',
+            'tasks_sprint_project_fk',
             'work_logs_duration_hours_check'
           )
         ) as "requiredConstraints",
+        (
+          select count(*)::int
+          from pg_indexes
+          where schemaname = 'public'
+            and indexname in (
+              'sprints_id_project_unique',
+              'sprints_one_active_per_project'
+            )
+        ) as "requiredSprintIndexes",
+        (
+          select count(*)::int
+          from pg_class
+          inner join pg_namespace on pg_namespace.oid = pg_class.relnamespace
+          where pg_namespace.nspname = 'public'
+            and pg_class.relkind = 'r'
+            and pg_class.relname in ('attachments', 'notifications', 'task_rejections')
+        ) as "collaborationTables",
         (select count(*)::int from users where status = 'active') as "activeUserCount",
         (select count(*)::int from project_members) as "projectMemberCount",
         (select count(*)::int from projects where archived = false) as "activeProjectCount",
@@ -172,7 +194,9 @@ async function main(): Promise<void> {
       summary.loginRateLimitsTable &&
       summary.testerColumn &&
       summary.testerRoleValues === 2 &&
-      summary.requiredConstraints === 5 &&
+      summary.requiredConstraints === 8 &&
+      summary.requiredSprintIndexes === 2 &&
+      summary.collaborationTables === 3 &&
       summary.missingOwnerManagers === 0 &&
       summary.duplicateActiveSprintGroups === 0 &&
       summary.invalidTaskAssignees === 0 &&

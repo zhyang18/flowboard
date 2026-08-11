@@ -26,6 +26,39 @@ export function isCompletedSprintStatus(status: SprintStatus | null): boolean {
 }
 
 /**
+ * 判断迭代是否允许从当前状态流转到目标状态。
+ *
+ * @param currentStatus 当前迭代状态。
+ * @param targetStatus 目标迭代状态。
+ * @return 状态保持不变或符合既定生命周期时返回 true。
+ */
+export function canTransitionSprintStatus(
+  currentStatus: SprintStatus,
+  targetStatus: SprintStatus,
+): boolean {
+  if (currentStatus === targetStatus) return true;
+  return (
+    (currentStatus === "planned" && targetStatus === "active") ||
+    (currentStatus === "active" && targetStatus === "completed") ||
+    (currentStatus === "completed" && targetStatus === "active")
+  );
+}
+
+/**
+ * 判断所选任务中是否存在已归属其他迭代的任务。
+ *
+ * @param sprintIds 所选任务当前关联的迭代 ID 列表。
+ * @param currentSprintId 当前正在规划的迭代 ID。
+ * @return 存在其他迭代任务时返回 true。
+ */
+export function hasTasksFromOtherSprint(
+  sprintIds: Array<string | null>,
+  currentSprintId: string,
+): boolean {
+  return sprintIds.some((sprintId) => Boolean(sprintId && sprintId !== currentSprintId));
+}
+
+/**
  * 为项目迭代生命周期生成顺序稳定的事务级锁查询。
  *
  * @param projectIds 需要串行保护的项目 ID 列表。

@@ -720,7 +720,7 @@ export default function UserManagement({
                   <div><dt>加入时间</dt><dd>{new Date(selectedUser.createdAt).toLocaleDateString("zh-CN")}</dd></div>
                 </dl>
                 <section className="capacity-panel">
-                  <header><b>本迭代容量</b><span>{selectedUser.capacity}%</span></header>
+                  <header><b>近 7 日工时利用率</b><span>{selectedUser.capacity}%</span></header>
                   <div><i style={{ width: `${Math.min(100, selectedUser.capacity)}%` }} /></div>
                   <p>参与 {selectedUser.projectCount} 个项目 · 最近 7 天已登记工时利用率</p>
                 </section>

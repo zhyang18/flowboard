@@ -1,6 +1,8 @@
 import {
   boolean,
   check,
+  customType,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -14,6 +16,10 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => "bytea",
+});
 
 export const userRoleEnum = pgEnum("user_role", [
   "super_admin",
@@ -220,7 +226,11 @@ export const sprints = pgTable(
     index("sprints_project_idx").on(table.projectId),
     index("sprints_status_idx").on(table.status),
     index("sprints_dates_idx").on(table.startDate, table.endDate),
+    uniqueIndex("sprints_id_project_unique").on(table.id, table.projectId),
     uniqueIndex("sprints_project_name_unique").on(table.projectId, table.name),
+    uniqueIndex("sprints_one_active_per_project")
+      .on(table.projectId)
+      .where(sql`${table.status} = 'active'`),
     check("sprints_capacity_hours_check", sql`${table.capacityHours} >= 0`),
     check("sprints_dates_check", sql`${table.endDate} >= ${table.startDate}`),
   ],
@@ -233,9 +243,7 @@ export const tasks = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    sprintId: uuid("sprint_id").references(() => sprints.id, {
-      onDelete: "set null",
-    }),
+    sprintId: uuid("sprint_id"),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     status: taskStatusEnum("status").notNull().default("backlog"),
@@ -272,8 +280,97 @@ export const tasks = pgTable(
     index("tasks_assignee_idx").on(table.assigneeId),
     index("tasks_tester_idx").on(table.testerId),
     index("tasks_due_date_idx").on(table.dueDate),
+    foreignKey({
+      columns: [table.sprintId, table.projectId],
+      foreignColumns: [sprints.id, sprints.projectId],
+      name: "tasks_sprint_project_fk",
+    }),
     check("tasks_estimate_hours_check", sql`${table.estimateHours} >= 0`),
     check("tasks_actual_hours_check", sql`${table.actualHours} >= 0`),
+  ],
+);
+
+export const taskRejections = pgTable(
+  "task_rejections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    testerId: uuid("tester_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    reason: text("reason").notNull(),
+    previousStatus: taskStatusEnum("previous_status").notNull(),
+    returnedStatus: taskStatusEnum("returned_status").notNull().default("in_progress"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_rejections_task_created_idx").on(table.taskId, table.createdAt),
+    index("task_rejections_tester_idx").on(table.testerId),
+  ],
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    detail: text("detail").notNull(),
+    href: text("href").notNull().default("/dashboard/board"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("notifications_recipient_read_idx").on(table.recipientId, table.readAt),
+    index("notifications_task_idx").on(table.taskId),
+  ],
+);
+
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    content: bytea("content").notNull(),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    rejectionId: uuid("rejection_id").references(() => taskRejections.id, {
+      onDelete: "cascade",
+    }),
+    draftToken: uuid("draft_token"),
+    uploadedBy: uuid("uploaded_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("attachments_project_idx").on(table.projectId),
+    index("attachments_task_idx").on(table.taskId),
+    index("attachments_rejection_idx").on(table.rejectionId),
+    index("attachments_draft_idx").on(table.draftToken, table.uploadedBy),
+    check("attachments_size_bytes_check", sql`${table.sizeBytes} > 0`),
+    check(
+      "attachments_single_owner_check",
+      sql`num_nonnulls(${table.projectId}, ${table.taskId}, ${table.rejectionId}, ${table.draftToken}) = 1`,
+    ),
   ],
 );
 
@@ -360,6 +457,8 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type TaskPriority = (typeof taskPriorityEnum.enumValues)[number];
+export type TaskRejection = typeof taskRejections.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
 export type Sprint = typeof sprints.$inferSelect;
 export type NewSprint = typeof sprints.$inferInsert;
 export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];

@@ -1,6 +1,6 @@
 import type { TaskStatus } from "@/db/schema";
 
-export type NotificationKind = "overdue" | "review" | "overrun" | "due_soon";
+export type NotificationKind = "overdue" | "review" | "overrun" | "due_soon" | "rejected";
 
 export type DashboardNotification = {
   id: string;
@@ -11,6 +11,7 @@ export type DashboardNotification = {
   timeLabel: string;
   href: string;
   occurredAt: string;
+  persistent?: boolean;
 };
 
 export type NotificationTaskInput = {
@@ -33,10 +34,11 @@ type BuildNotificationOptions = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const kindOrder: Record<NotificationKind, number> = {
-  overdue: 0,
-  review: 1,
-  overrun: 2,
-  due_soon: 3,
+  rejected: 0,
+  overdue: 1,
+  review: 2,
+  overrun: 3,
+  due_soon: 4,
 };
 
 /**

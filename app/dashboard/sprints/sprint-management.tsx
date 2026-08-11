@@ -7,7 +7,9 @@ import {
   ClipboardList,
   Edit3,
   Gauge,
+  Play,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -61,12 +63,16 @@ type ProjectOption = {
   color: string;
   canManage: boolean;
 };
-type CandidateTask = SprintTask & { projectId: string; testerName: string | null };
+type CandidateTask = SprintTask & {
+  projectId: string;
+  sprintName: string | null;
+  sprintStatus: SprintStatus | null;
+  testerName: string | null;
+};
 type SprintForm = {
   projectId: string;
   name: string;
   goal: string;
-  status: SprintStatus;
   capacityHours: number;
   startDate: string;
   endDate: string;
@@ -76,7 +82,6 @@ const emptyForm: SprintForm = {
   projectId: "",
   name: "",
   goal: "",
-  status: "planned",
   capacityHours: 80,
   startDate: "",
   endDate: "",
@@ -123,6 +128,7 @@ export default function SprintManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SprintForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [planningSprint, setPlanningSprint] = useState<SprintRecord | null>(null);
   const [candidateTasks, setCandidateTasks] = useState<CandidateTask[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
@@ -220,7 +226,6 @@ export default function SprintManagement() {
       projectId: sprint.projectId,
       name: sprint.name,
       goal: sprint.goal,
-      status: sprint.status,
       capacityHours: sprint.capacityHours,
       startDate: inputDate(sprint.startDate),
       endDate: inputDate(sprint.endDate),
@@ -256,6 +261,61 @@ export default function SprintManagement() {
       setError(saveError instanceof Error ? saveError.message : "迭代保存失败。");
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * 按既定生命周期启动、完成或重新打开迭代。
+   *
+   * @param sprint 待流转的迭代。
+   * @param targetStatus 目标迭代状态。
+   * @return 状态流转完成后的 Promise。
+   */
+  async function transitionSprint(
+    sprint: SprintRecord,
+    targetStatus: SprintStatus,
+  ): Promise<void> {
+    if (
+      targetStatus === "completed" &&
+      sprint.completedTaskCount !== sprint.taskCount
+    ) {
+      setError("迭代仍有未完成任务，请先完成任务或在任务规划中将其移出。");
+      return;
+    }
+    const confirmation =
+      targetStatus === "completed"
+        ? `确定完成迭代“${sprint.name}”吗？完成后任务和工时将锁定。`
+        : targetStatus === "active" && sprint.status === "completed"
+          ? `确定重新打开迭代“${sprint.name}”吗？它会恢复为进行中。`
+          : null;
+    if (confirmation && !window.confirm(confirmation)) return;
+
+    setTransitioningId(sprint.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/sprints/${sprint.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "迭代状态更新失败。");
+      setNotice(
+        targetStatus === "completed"
+          ? "迭代已完成并锁定"
+          : sprint.status === "completed"
+            ? "迭代已重新打开"
+            : "迭代已启动",
+      );
+      await loadSprints();
+    } catch (transitionError) {
+      setError(
+        transitionError instanceof Error
+          ? transitionError.message
+          : "迭代状态更新失败。",
+      );
+    } finally {
+      setTransitioningId(null);
     }
   }
 
@@ -432,9 +492,21 @@ export default function SprintManagement() {
                       <span>历史快照已锁定</span>
                     )}
                     <div>
-                      <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
                       {sprint.status === "planned" && (
-                        <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
+                        <>
+                          <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><Play size={14} /> 启动</button>
+                          <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                          <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
+                        </>
+                      )}
+                      {sprint.status === "active" && (
+                        <>
+                          <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "completed")}><CheckCircle2 size={14} /> 完成</button>
+                          <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                        </>
+                      )}
+                      {sprint.status === "completed" && (
+                        <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><RotateCcw size={14} /> 重新打开</button>
                       )}
                     </div>
                   </footer>
@@ -458,7 +530,6 @@ export default function SprintManagement() {
               <div className="workspace-form-grid">
                 <label><span>所属项目</span><select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}><option value="">请选择</option>{projects.filter((project) => project.canManage).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
                 <label><span>迭代名称</span><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：Sprint 2026-08" /></label>
-                <label><span>状态</span><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as SprintStatus })}>{Object.entries(sprintStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                 <label><span>团队容量（小时）</span><input type="number" min="0" step="1" value={form.capacityHours} onChange={(e) => setForm({ ...form, capacityHours: Number(e.target.value) })} /></label>
                 <label><span>开始日期</span><input required type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label>
                 <label><span>结束日期</span><input required type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label>
@@ -482,16 +553,31 @@ export default function SprintManagement() {
               <b>{candidateTasks.filter((task) => selectedTaskIds.includes(task.id)).reduce((sum, task) => sum + task.estimateHours, 0).toFixed(1)}h / {planningSprint.capacityHours.toFixed(1)}h</b>
             </div>
             <div className="planning-task-list">
-              {candidateTasks.map((task) => (
-                <label key={task.id} className={selectedTaskIds.includes(task.id) ? "selected" : ""}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTaskIds.includes(task.id)}
-                    onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))}
-                  />
-                  <span><b>{task.title}</b><small>{taskStatusLabels[task.status]} · 预估 {task.estimateHours.toFixed(1)}h · 测试 {task.testerName ?? "待指派"}</small></span>
-                </label>
-              ))}
+              {candidateTasks.map((task) => {
+                const belongsToOtherSprint = Boolean(
+                  task.sprintId && task.sprintId !== planningSprint.id,
+                );
+                return (
+                  <label
+                    key={task.id}
+                    className={`${selectedTaskIds.includes(task.id) ? "selected" : ""} ${belongsToOtherSprint ? "blocked" : ""}`.trim()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTaskIds.includes(task.id)}
+                      disabled={belongsToOtherSprint}
+                      onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))}
+                    />
+                    <span>
+                      <b>{task.title}</b>
+                      <small>
+                        {taskStatusLabels[task.status]} · 预估 {task.estimateHours.toFixed(1)}h · 测试 {task.testerName ?? "待指派"}
+                        {belongsToOtherSprint ? ` · 已属于 ${task.sprintName ?? "其他迭代"}` : ""}
+                      </small>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
             <footer className="planning-footer"><button type="button" onClick={() => setPlanningSprint(null)}>取消</button><button className="primary-action" type="button" disabled={planningLoading} onClick={() => void savePlanning()}>{planningLoading ? "保存中…" : "保存任务范围"}</button></footer>
           </section>

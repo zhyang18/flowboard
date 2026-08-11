@@ -25,6 +25,9 @@ import {
 } from "react";
 import type { ProjectStatus, UserStatus } from "@/db/schema";
 import { projectStatusLabels } from "@/lib/workspace";
+import AttachmentEditor from "../attachment-editor";
+import AttachmentViewer from "../attachment-viewer";
+import RichTextContent from "../rich-text-content";
 
 type ProjectRecord = {
   id: string;
@@ -45,6 +48,7 @@ type ProjectRecord = {
   memberIds: string[];
   memberCount: number;
   testerCount: number;
+  attachmentCount: number;
   archived: boolean;
   canManage: boolean;
   canRestore: boolean;
@@ -124,6 +128,7 @@ export default function ProjectManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ProjectForm>(emptyForm);
+  const [attachmentDraftToken, setAttachmentDraftToken] = useState("");
   const [saving, setSaving] = useState(false);
 
   /**
@@ -200,6 +205,7 @@ export default function ProjectManagement() {
    */
   function openCreate() {
     setEditingId(null);
+    setAttachmentDraftToken(crypto.randomUUID());
     setForm({
       ...emptyForm,
       ownerId: owners[0]?.id ?? "",
@@ -217,6 +223,7 @@ export default function ProjectManagement() {
    */
   function openEdit(project: ProjectRecord) {
     setEditingId(project.id);
+    setAttachmentDraftToken(crypto.randomUUID());
     setForm({
       name: project.name,
       code: project.code,
@@ -247,7 +254,7 @@ export default function ProjectManagement() {
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({ ...form, attachmentDraftToken }),
         },
       );
       const result = (await response.json()) as { error?: string };
@@ -431,7 +438,8 @@ export default function ProjectManagement() {
                     {project.archived ? "已归档" : projectStatusLabels[project.status]}
                   </span>
                 </header>
-                <p>{project.description || "暂无项目描述。"}</p>
+                <RichTextContent value={project.description} emptyText="暂无项目描述。" />
+                {project.attachmentCount > 0 && <AttachmentViewer owner={{ type: "projectId", id: project.id }} />}
                 <div className="project-owner">
                   <span className="avatar">{project.ownerName.slice(0, 1)}</span>
                   <div><small>项目负责人</small><b>{project.ownerName}</b></div>
@@ -579,10 +587,14 @@ export default function ProjectManagement() {
                   <span>截止日期</span>
                   <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
                 </label>
-                <label className="form-wide">
-                  <span>项目描述</span>
-                  <textarea maxLength={500} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="说明项目目标、交付范围和成功标准。" />
-                </label>
+                <AttachmentEditor
+                  draftToken={attachmentDraftToken}
+                  owner={editingId ? { type: "projectId", id: editingId } : undefined}
+                  value={form.description}
+                  onChange={(description) => setForm({ ...form, description })}
+                  label="项目说明与附件"
+                  placeholder="说明项目目标、交付范围和成功标准；上传图片后会插入预览。"
+                />
                 <fieldset className="form-wide color-fieldset">
                   <legend>识别颜色</legend>
                   {colors.map((color) => (

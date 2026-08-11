@@ -26,6 +26,7 @@ async function main(): Promise<void> {
         invalidTasks: number;
         invalidWorkLogs: number;
         invalidProjectOwners: number;
+        crossProjectSprintTasks: number;
         taskActualHourMismatches: number;
       }>
     >`
@@ -74,6 +75,12 @@ async function main(): Promise<void> {
         (
           select count(*)::int
           from tasks
+          inner join sprints on sprints.id = tasks.sprint_id
+          where tasks.project_id <> sprints.project_id
+        ) as "crossProjectSprintTasks",
+        (
+          select count(*)::int
+          from tasks
           where abs(
             actual_hours - coalesce((
               select sum(work_logs.duration_hours)
@@ -90,7 +97,8 @@ async function main(): Promise<void> {
       summary.invalidSprints +
       summary.invalidTasks +
       summary.invalidWorkLogs +
-      summary.invalidProjectOwners;
+      summary.invalidProjectOwners +
+      summary.crossProjectSprintTasks;
     console.log(
       JSON.stringify(
         {

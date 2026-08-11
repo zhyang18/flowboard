@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Clock3,
   Mail,
+  RotateCcw,
   Settings,
   ShieldCheck,
   UserRoundCog,
@@ -77,6 +78,7 @@ type OpenMenu = "notifications" | "profile" | null;
  * @return 对应的提醒图标。
  */
 function NotificationIcon({ kind }: { kind: NotificationKind }) {
+  if (kind === "rejected") return <RotateCcw size={17} />;
   if (kind === "overdue") return <CircleAlert size={17} />;
   if (kind === "review") return <CheckCircle2 size={17} />;
   if (kind === "overrun") return <Clock3 size={17} />;
@@ -177,6 +179,27 @@ export default function DashboardTopbar({ user }: { user: CurrentUser }) {
     setOpenMenu((value) => value === "profile" ? null : "profile");
   }
 
+  /**
+   * 将持久化任务通知标记为已读并同步本地计数。
+   *
+   * @param id 通知 ID。
+   * @return 标记请求完成后的 Promise。
+   */
+  async function markNotificationRead(id: string): Promise<void> {
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) return;
+      setNotifications((current) => current.filter((item) => item.id !== id));
+      setNotificationCount((current) => Math.max(0, current - 1));
+    } catch {
+      // 跳转不应被已读同步失败阻断，下一次打开通知时仍会显示该消息。
+    }
+  }
+
   return (
     <header className="dashboard-topbar">
       <div className="topbar-title">
@@ -246,7 +269,10 @@ export default function DashboardTopbar({ user }: { user: CurrentUser }) {
                   className={`notification-item ${item.kind}`}
                   href={item.href}
                   key={item.id}
-                  onClick={() => setOpenMenu(null)}
+                  onClick={() => {
+                    setOpenMenu(null);
+                    if (item.persistent) void markNotificationRead(item.id);
+                  }}
                 >
                   <span className="notification-kind-icon">
                     <NotificationIcon kind={item.kind} />

@@ -1,12 +1,26 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
+  attachments,
   auditLogs,
   projectMembers,
   projects,
   sprints,
+  taskRejections,
   tasks,
   users,
 } from "@/db/schema";
@@ -19,6 +33,7 @@ import {
   projectVisibilityCondition,
 } from "@/lib/authorization";
 import { apiError, textValue } from "@/lib/api";
+import { attachmentDraftToken } from "@/lib/attachments";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
@@ -39,6 +54,7 @@ export const dynamic = "force-dynamic";
 
 const assigneeUsers = alias(users, "assignee_users");
 const testerUsers = alias(users, "tester_users");
+const rejectionTesters = alias(users, "rejection_testers");
 
 /**
  * 获取当前用户可见的任务、项目以及按项目约束的开发和测试负责人选项。
@@ -54,6 +70,7 @@ export async function GET(request: Request) {
   const projectId = searchParams.get("projectId") ?? "";
   const assigneeId = searchParams.get("assigneeId") ?? "";
   const testerId = searchParams.get("testerId") ?? "";
+  const sprintId = searchParams.get("sprintId") ?? "";
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
   const conditions: SQL[] = [
     eq(projects.archived, false),
@@ -62,6 +79,8 @@ export async function GET(request: Request) {
   if (projectId) conditions.push(eq(tasks.projectId, projectId));
   if (assigneeId) conditions.push(eq(tasks.assigneeId, assigneeId));
   if (testerId) conditions.push(eq(tasks.testerId, testerId));
+  if (sprintId === "unplanned") conditions.push(isNull(tasks.sprintId));
+  else if (sprintId) conditions.push(eq(tasks.sprintId, sprintId));
   if (query) {
     const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
     conditions.push(or(ilike(tasks.title, pattern), ilike(tasks.description, pattern))!);
@@ -88,7 +107,7 @@ export async function GET(request: Request) {
     .orderBy(asc(projects.name));
   const projectIds = projectRows.map((project) => project.id);
 
-  const [taskRows, memberRows, currentMembershipRows] = await Promise.all([
+  const [taskRows, memberRows, currentMembershipRows, sprintRows] = await Promise.all([
     db
       .select({
         task: tasks,
@@ -97,6 +116,7 @@ export async function GET(request: Request) {
         projectColor: projects.color,
         assigneeName: assigneeUsers.name,
         testerName: testerUsers.name,
+        sprintName: sprints.name,
         sprintStatus: sprints.status,
         overdue: sql<boolean>`${tasks.status} <> 'done' and ${tasks.dueDate} < now()`,
       })
@@ -137,11 +157,57 @@ export async function GET(request: Request) {
             ),
           )
       : Promise.resolve([]),
+    projectIds.length
+      ? db
+          .select({
+            id: sprints.id,
+            projectId: sprints.projectId,
+            name: sprints.name,
+            status: sprints.status,
+          })
+          .from(sprints)
+          .where(inArray(sprints.projectId, projectIds))
+          .orderBy(asc(sprints.startDate), asc(sprints.name))
+      : Promise.resolve([]),
   ]);
 
   const membershipMap = new Map(
     currentMembershipRows.map((member) => [member.projectId, member.role]),
   );
+  const taskIds = taskRows.map((row) => row.task.id);
+  const attachmentCountRows = taskIds.length
+    ? await db
+        .select({ taskId: attachments.taskId, value: count() })
+        .from(attachments)
+        .where(inArray(attachments.taskId, taskIds))
+        .groupBy(attachments.taskId)
+    : [];
+  const attachmentCountMap = new Map(
+    attachmentCountRows.map((item) => [item.taskId, Number(item.value)]),
+  );
+  const rejectionRows = taskIds.length
+    ? await db
+        .select({
+          id: taskRejections.id,
+          taskId: taskRejections.taskId,
+          reason: taskRejections.reason,
+          testerName: rejectionTesters.name,
+          createdAt: taskRejections.createdAt,
+        })
+        .from(taskRejections)
+        .innerJoin(rejectionTesters, eq(taskRejections.testerId, rejectionTesters.id))
+        .where(inArray(taskRejections.taskId, taskIds))
+        .orderBy(desc(taskRejections.createdAt))
+    : [];
+  const latestRejectionMap = new Map<
+    string,
+    (typeof rejectionRows)[number]
+  >();
+  for (const rejection of rejectionRows) {
+    if (!latestRejectionMap.has(rejection.taskId)) {
+      latestRejectionMap.set(rejection.taskId, rejection);
+    }
+  }
   const projectMap = new Map(projectRows.map((project) => [project.id, project]));
   const accessForProject = (id: string) => {
     const project = projectMap.get(id);
@@ -184,6 +250,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     data: taskRows.map((row) => {
       const access = accessForProject(row.task.projectId);
+      const latestRejection = latestRejectionMap.get(row.task.id);
       return {
         ...serializeTask(row.task),
         projectName: row.projectName,
@@ -191,11 +258,27 @@ export async function GET(request: Request) {
         projectColor: row.projectColor,
         assigneeName: row.assigneeName,
         testerName: row.testerName,
+        sprintName: row.sprintName,
+        sprintStatus: row.sprintStatus,
+        attachmentCount: attachmentCountMap.get(row.task.id) ?? 0,
+        latestRejection: latestRejection
+          ? {
+              id: latestRejection.id,
+              reason: latestRejection.reason,
+              testerName: latestRejection.testerName,
+              createdAt: latestRejection.createdAt.toISOString(),
+            }
+          : null,
         overdue: row.overdue,
         canEdit:
           !isCompletedSprintStatus(row.sprintStatus) &&
           canEditTask(currentUser, access, row.task),
         canManageProject: canManageProject(currentUser, access),
+        canReject:
+          row.task.status === "review" &&
+          row.task.testerId === currentUser.id &&
+          currentUser.role === "tester" &&
+          !isCompletedSprintStatus(row.sprintStatus),
         canDelete:
           !isCompletedSprintStatus(row.sprintStatus) &&
           (canManageProject(currentUser, access) || row.task.reporterId === currentUser.id),
@@ -218,6 +301,7 @@ export async function GET(request: Request) {
     })),
     assignees: [...assigneeMap.values()],
     testers: [...testerMap.values()],
+    sprints: sprintRows,
     currentUserId: currentUser.id,
     currentUserRole: currentUser.role,
     canCreate: projectRows.some((project) =>
@@ -247,7 +331,8 @@ export async function POST(request: Request) {
 
   const projectId = typeof body.projectId === "string" ? body.projectId : "";
   const title = textValue(body.title, 160);
-  const description = textValue(body.description, 1500);
+  const description = textValue(body.description, 10_000);
+  const draftToken = attachmentDraftToken(body.attachmentDraftToken);
   const status = isTaskStatus(body.status) ? body.status : "backlog";
   const priority = isTaskPriority(body.priority) ? body.priority : "medium";
   const assigneeId =
@@ -380,6 +465,17 @@ export async function POST(request: Request) {
             status === "done" && settings.autoCompleteTimestamp ? new Date() : null,
         })
         .returning();
+      if (draftToken) {
+        await tx
+          .update(attachments)
+          .set({ taskId: task.id, draftToken: null })
+          .where(
+            and(
+              eq(attachments.draftToken, draftToken),
+              eq(attachments.uploadedBy, currentUser.id),
+            ),
+          );
+      }
       await tx.insert(auditLogs).values({
         actorId: currentUser.id,
         action: "task.create",

@@ -2,6 +2,7 @@
 
 import {
   CalendarClock,
+  CalendarRange,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
@@ -12,6 +13,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Undo2,
   UserRound,
   X,
 } from "lucide-react";
@@ -23,12 +25,16 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import type { TaskPriority, TaskStatus, UserRole } from "@/db/schema";
+import type { SprintStatus, TaskPriority, TaskStatus, UserRole } from "@/db/schema";
 import {
+  sprintStatusLabels,
   taskPriorityLabels,
   taskStatusLabels,
   taskStatuses,
 } from "@/lib/workspace";
+import AttachmentEditor from "../attachment-editor";
+import AttachmentViewer from "../attachment-viewer";
+import RichTextContent from "../rich-text-content";
 
 type BoardTask = {
   id: string;
@@ -36,6 +42,10 @@ type BoardTask = {
   projectName: string;
   projectCode: string;
   projectColor: string;
+  sprintId: string | null;
+  sprintName: string | null;
+  sprintStatus: SprintStatus | null;
+  attachmentCount: number;
   title: string;
   description: string;
   status: TaskStatus;
@@ -52,6 +62,13 @@ type BoardTask = {
   canEdit: boolean;
   canDelete: boolean;
   canManageProject: boolean;
+  canReject: boolean;
+  latestRejection: {
+    id: string;
+    reason: string;
+    testerName: string;
+    createdAt: string;
+  } | null;
   overdue: boolean;
 };
 
@@ -65,9 +82,16 @@ type ProjectOption = {
 };
 type AssigneeOption = { id: string; name: string; projectIds: string[] };
 type TesterOption = { id: string; name: string; projectIds: string[] };
+type SprintOption = {
+  id: string;
+  projectId: string;
+  name: string;
+  status: SprintStatus;
+};
 
 type TaskForm = {
   projectId: string;
+  sprintId: string;
   title: string;
   description: string;
   status: TaskStatus;
@@ -80,6 +104,7 @@ type TaskForm = {
 
 const emptyForm: TaskForm = {
   projectId: "",
+  sprintId: "",
   title: "",
   description: "",
   status: "todo",
@@ -140,6 +165,7 @@ export default function TaskBoard() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
   const [testers, setTesters] = useState<TesterOption[]>([]);
+  const [sprints, setSprints] = useState<SprintOption[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>("member");
   const [canCreate, setCanCreate] = useState(false);
@@ -147,6 +173,7 @@ export default function TaskBoard() {
   const [projectId, setProjectId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [testerId, setTesterId] = useState("");
+  const [sprintId, setSprintId] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -156,7 +183,12 @@ export default function TaskBoard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TaskForm>(emptyForm);
+  const [attachmentDraftToken, setAttachmentDraftToken] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rejectingTask, setRejectingTask] = useState<BoardTask | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [rejectionDraftToken, setRejectionDraftToken] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   /**
    * 按当前筛选条件加载任务以及可选的开发和测试负责人。
@@ -170,6 +202,7 @@ export default function TaskBoard() {
     if (projectId) params.set("projectId", projectId);
     if (assigneeId) params.set("assigneeId", assigneeId);
     if (testerId) params.set("testerId", testerId);
+    if (sprintId) params.set("sprintId", sprintId);
     if (query.trim()) params.set("query", query.trim());
     try {
       const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
@@ -178,6 +211,7 @@ export default function TaskBoard() {
         projects?: ProjectOption[];
         assignees?: AssigneeOption[];
         testers?: TesterOption[];
+        sprints?: SprintOption[];
         currentUserId?: string;
         currentUserRole?: UserRole;
         canCreate?: boolean;
@@ -189,6 +223,7 @@ export default function TaskBoard() {
       setProjects(result.projects ?? []);
       setAssignees(result.assignees ?? []);
       setTesters(result.testers ?? []);
+      setSprints(result.sprints ?? []);
       setCurrentUserId(result.currentUserId ?? "");
       setCurrentUserRole(result.currentUserRole ?? "member");
       setCanCreate(Boolean(result.canCreate));
@@ -198,7 +233,7 @@ export default function TaskBoard() {
     } finally {
       setLoading(false);
     }
-  }, [assigneeId, projectId, query, testerId]);
+  }, [assigneeId, projectId, query, sprintId, testerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
@@ -241,6 +276,7 @@ export default function TaskBoard() {
         assignee.projectIds.includes(writableProject.id),
     );
     setEditingId(null);
+    setAttachmentDraftToken(crypto.randomUUID());
     setForm({
       ...emptyForm,
       status,
@@ -276,8 +312,10 @@ export default function TaskBoard() {
    */
   function openEdit(task: BoardTask) {
     setEditingId(task.id);
+    setAttachmentDraftToken(crypto.randomUUID());
     setForm({
       projectId: task.projectId,
+      sprintId: task.sprintId ?? "",
       title: task.title,
       description: task.description,
       status: task.status,
@@ -305,7 +343,7 @@ export default function TaskBoard() {
       const payload =
         editingTask && currentUserRole === "tester" && !editingTask.canManageProject
           ? { status: form.status }
-          : form;
+          : { ...form, attachmentDraftToken };
       const response = await fetch(editingId ? `/api/tasks/${editingId}` : "/api/tasks", {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -399,6 +437,51 @@ export default function TaskBoard() {
     }
   }
 
+  /**
+   * 打开测试不通过表单并初始化独立附件草稿。
+   *
+   * @param task 待测试打回的任务。
+   * @return 无返回值。
+   */
+  function openReject(task: BoardTask): void {
+    setRejectingTask(task);
+    setRejectionReason("");
+    setRejectionDraftToken(crypto.randomUUID());
+    setError("");
+  }
+
+  /**
+   * 提交测试不通过原因、认领附件并将任务退回开发中。
+   *
+   * @param event 测试打回表单提交事件。
+   * @return 提交流程完成后的 Promise。
+   */
+  async function rejectTask(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!rejectingTask) return;
+    setRejecting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/tasks/${rejectingTask.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: rejectionReason,
+          attachmentDraftToken: rejectionDraftToken,
+        }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "任务打回失败。");
+      setRejectingTask(null);
+      setNotice("测试结果已记录，任务已退回开发中并通知开发负责人");
+      await loadTasks();
+    } catch (rejectError) {
+      setError(rejectError instanceof Error ? rejectError.message : "任务打回失败。");
+    } finally {
+      setRejecting(false);
+    }
+  }
+
   const editingTask = tasks.find((task) => task.id === editingId);
   const testerStatusOnly = Boolean(
     editingTask && currentUserRole === "tester" && !editingTask.canManageProject,
@@ -434,9 +517,27 @@ export default function TaskBoard() {
         </label>
         <label className="module-select">
           <span className="select-color" style={{ background: projects.find((project) => project.id === projectId)?.color ?? "#9aa6b2" }} />
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          <select value={projectId} onChange={(event) => {
+            setProjectId(event.target.value);
+            setSprintId("");
+          }}>
             <option value="">全部项目</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+          </select>
+          <ChevronDown size={14} />
+        </label>
+        <label className="module-select">
+          <CalendarRange size={14} />
+          <select value={sprintId} onChange={(event) => setSprintId(event.target.value)}>
+            <option value="">全部迭代</option>
+            <option value="unplanned">未规划</option>
+            {sprints
+              .filter((sprint) => !projectId || sprint.projectId === projectId)
+              .map((sprint) => (
+                <option key={sprint.id} value={sprint.id}>
+                  {projects.find((project) => project.id === sprint.projectId)?.code} · {sprint.name}
+                </option>
+              ))}
           </select>
           <ChevronDown size={14} />
         </label>
@@ -518,6 +619,7 @@ export default function TaskBoard() {
                             {(task.canEdit || task.canDelete) && (
                               <div className="task-card-actions">
                                 {task.canEdit && <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>}
+                                {task.canReject && <button type="button" onClick={() => openReject(task)} aria-label={`测试打回 ${task.title}`}><Undo2 size={13} /></button>}
                                 {task.canDelete && <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>}
                                 {task.canEdit && <GripVertical size={14} />}
                               </div>
@@ -526,8 +628,12 @@ export default function TaskBoard() {
                           <small className="task-project">
                             <i style={{ background: task.projectColor }} /> {task.projectCode}
                           </small>
+                          <small className={`task-sprint ${task.sprintStatus === "completed" ? "completed" : ""}`}>
+                            <CalendarRange size={11} /> {task.sprintName ?? "未规划迭代"}
+                          </small>
                           <h3>{task.title}</h3>
-                          {task.description && <p>{task.description}</p>}
+                          {task.description && <RichTextContent value={task.description} />}
+                          {task.attachmentCount > 0 && <AttachmentViewer owner={{ type: "taskId", id: task.id }} />}
                           <div className="task-time-grid">
                             <span><small>预估</small><b>{task.estimateHours.toFixed(1)}h</b></span>
                             <span><small>实际</small><b>{task.actualHours.toFixed(1)}h</b></span>
@@ -553,6 +659,13 @@ export default function TaskBoard() {
                           {task.completedAt && (
                             <div className="completed-time">
                               <CheckCircle2 size={12} /> 完成于 {completedLabel(task.completedAt)}
+                            </div>
+                          )}
+                          {task.latestRejection && (
+                            <div className="task-rejection-note">
+                              <header><Undo2 size={12} /> 上次测试未通过 · {task.latestRejection.testerName}</header>
+                              <RichTextContent value={task.latestRejection.reason} />
+                              <AttachmentViewer owner={{ type: "rejectionId", id: task.latestRejection.id }} />
                             </div>
                           )}
                         </article>
@@ -594,6 +707,7 @@ export default function TaskBoard() {
                     setForm({
                       ...form,
                       projectId: nextProjectId,
+                      sprintId: "",
                       assigneeId: assignees.some(
                         (assignee) =>
                           assignee.id === form.assigneeId &&
@@ -616,6 +730,26 @@ export default function TaskBoard() {
                         ? project.id === form.projectId || project.canManage
                         : project.canCreateTask,
                     ).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>所属迭代</span>
+                  <select
+                    disabled={testerStatusOnly || !formProject?.canManage}
+                    value={form.sprintId}
+                    onChange={(e) => setForm({ ...form, sprintId: e.target.value })}
+                  >
+                    <option value="">未规划</option>
+                    {sprints
+                      .filter(
+                        (sprint) =>
+                          sprint.projectId === form.projectId && sprint.status !== "completed",
+                      )
+                      .map((sprint) => (
+                        <option key={sprint.id} value={sprint.id}>
+                          {sprint.name} · {sprintStatusLabels[sprint.status]}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label>
@@ -664,10 +798,15 @@ export default function TaskBoard() {
                   <span>截止日期</span>
                   <input disabled={testerStatusOnly} type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
                 </label>
-                <label className="form-wide">
-                  <span>任务说明</span>
-                  <textarea disabled={testerStatusOnly} maxLength={1500} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="补充验收标准、背景或注意事项。" />
-                </label>
+                <AttachmentEditor
+                  draftToken={attachmentDraftToken}
+                  owner={editingId ? { type: "taskId", id: editingId } : undefined}
+                  value={form.description}
+                  onChange={(description) => setForm({ ...form, description })}
+                  label="任务说明与附件"
+                  placeholder="补充验收标准、背景或注意事项；上传图片后会插入预览。"
+                  disabled={testerStatusOnly}
+                />
               </div>
               <div className="time-form-hint">
                 <Clock3 size={15} />
@@ -678,6 +817,34 @@ export default function TaskBoard() {
                 <button className="primary-action" type="submit" disabled={saving}>
                   {saving ? "保存中…" : editingId ? "保存修改" : "创建任务"}
                 </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {rejectingTask && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="workspace-modal task-reject-modal" role="dialog" aria-modal="true" aria-labelledby="task-reject-title">
+            <header>
+              <div>
+                <span className="eyebrow">测试不通过</span>
+                <h2 id="task-reject-title">打回：{rejectingTask.title}</h2>
+              </div>
+              <button type="button" onClick={() => setRejectingTask(null)} aria-label="关闭"><X size={18} /></button>
+            </header>
+            <form onSubmit={rejectTask}>
+              <AttachmentEditor
+                draftToken={rejectionDraftToken}
+                value={rejectionReason}
+                onChange={setRejectionReason}
+                label="不通过原因与附件"
+                placeholder="说明复现步骤、实际结果和期望结果；可上传截图或其他附件。"
+              />
+              <div className="time-form-hint"><Undo2 size={15} /><span>提交后任务会从“待评审”退回“开发中”，并通知开发负责人。</span></div>
+              <footer>
+                <button type="button" onClick={() => setRejectingTask(null)}>取消</button>
+                <button className="primary-action" type="submit" disabled={rejecting}>{rejecting ? "提交中…" : "确认打回"}</button>
               </footer>
             </form>
           </section>

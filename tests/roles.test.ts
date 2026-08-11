@@ -11,7 +11,9 @@ import {
   type ProjectAccess,
 } from "../lib/authorization";
 import {
+  canTransitionSprintStatus,
   hasOtherActiveSprint,
+  hasTasksFromOtherSprint,
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "../lib/sprints";
@@ -118,6 +120,16 @@ test("已完成迭代被识别为历史快照且项目锁会去重", () => {
     projectLifecycleLockQueries(["project-2", "project-1", "project-2"]).length,
     2,
   );
+});
+
+test("迭代只允许顺序流转、完成后重新打开且任务不可跨迭代静默移动", () => {
+  assert.equal(canTransitionSprintStatus("planned", "active"), true);
+  assert.equal(canTransitionSprintStatus("active", "completed"), true);
+  assert.equal(canTransitionSprintStatus("completed", "active"), true);
+  assert.equal(canTransitionSprintStatus("planned", "completed"), false);
+  assert.equal(canTransitionSprintStatus("active", "planned"), false);
+  assert.equal(hasTasksFromOtherSprint([null, "sprint-1"], "sprint-1"), false);
+  assert.equal(hasTasksFromOtherSprint(["sprint-2"], "sprint-1"), true);
 });
 
 test("只有管理员角色可以导出报表", () => {

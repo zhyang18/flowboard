@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
+  attachments,
   auditLogs,
   projectMembers,
   projects,
@@ -16,6 +17,7 @@ import {
   projectVisibilityCondition,
 } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
+import { attachmentDraftToken } from "@/lib/attachments";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { canOwnProject, projectMemberRoleForUser } from "@/lib/users";
@@ -65,7 +67,7 @@ export async function GET() {
     .orderBy(asc(projects.createdAt));
 
   const projectIds = projectRows.map(({ project }) => project.id);
-  const [taskRows, memberRows, currentMembershipRows, peopleRows] = await Promise.all([
+  const [taskRows, memberRows, currentMembershipRows, peopleRows, attachmentCountRows] = await Promise.all([
     projectIds.length
       ? db
           .select({
@@ -109,7 +111,17 @@ export async function GET() {
       .select({ id: users.id, name: users.name, role: users.role, status: users.status })
       .from(users)
       .orderBy(asc(users.name)),
+    projectIds.length
+      ? db
+          .select({ projectId: attachments.projectId, value: count() })
+          .from(attachments)
+          .where(inArray(attachments.projectId, projectIds))
+          .groupBy(attachments.projectId)
+      : Promise.resolve([]),
   ]);
+  const attachmentCountMap = new Map(
+    attachmentCountRows.map((item) => [item.projectId, Number(item.value)]),
+  );
 
   const metrics = new Map<
     string,
@@ -169,6 +181,7 @@ export async function GET() {
         memberIds: members.map((member) => member.userId),
         memberCount: members.length,
         testerCount: members.filter((member) => member.role === "tester").length,
+        attachmentCount: attachmentCountMap.get(project.id) ?? 0,
         canManage: canManageProject(currentUser, {
           projectId: project.id,
           ownerId: project.ownerId,
@@ -225,7 +238,8 @@ export async function POST(request: Request) {
 
   const name = textValue(body.name, 80);
   const code = projectCode(body.code);
-  const description = textValue(body.description, 500);
+  const description = textValue(body.description, 10_000);
+  const draftToken = attachmentDraftToken(body.attachmentDraftToken);
   const color = /^#[0-9a-f]{6}$/i.test(String(body.color))
     ? String(body.color)
     : "#2f7df6";
@@ -280,6 +294,17 @@ export async function POST(request: Request) {
           role: projectMemberRoleForUser(member.role, member.id === ownerId),
         })),
       );
+      if (draftToken) {
+        await tx
+          .update(attachments)
+          .set({ projectId: project.id, draftToken: null })
+          .where(
+            and(
+              eq(attachments.draftToken, draftToken),
+              eq(attachments.uploadedBy, currentUser.id),
+            ),
+          );
+      }
       await tx.insert(auditLogs).values({
         actorId: currentUser.id,
         action: "project.create",

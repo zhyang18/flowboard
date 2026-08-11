@@ -1,12 +1,18 @@
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, sprints, tasks } from "@/db/schema";
 import { canManageProject, getProjectAccess } from "@/lib/authorization";
-import { apiError, isUniqueViolation, textValue } from "@/lib/api";
+import {
+  apiError,
+  isConstraintViolation,
+  isUniqueViolation,
+  textValue,
+} from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import {
+  canTransitionSprintStatus,
   hasOtherActiveSprint,
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
@@ -72,11 +78,17 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (endDate < startDate) return apiError("结束日期不能早于开始日期。");
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
   if (!name) return apiError("迭代名称不能为空。");
+  if ("status" in body && !isSprintStatus(body.status)) {
+    return apiError("迭代状态无效。");
+  }
   const status = isSprintStatus(body.status) ? body.status : existing.status;
+  if (!canTransitionSprintStatus(existing.status, status)) {
+    return apiError("迭代状态只能按“未开始 → 进行中 → 已完成”流转。", 409);
+  }
   if (isCompletedSprintStatus(existing.status)) {
     const changesSnapshot = Object.keys(body).some((field) => field !== "status");
-    if (status === "completed" || changesSnapshot) {
-      return apiError("已完成迭代为历史快照，请先单独重新打开后再修改。", 409);
+    if (status !== "active" || changesSnapshot) {
+      return apiError("已完成迭代为历史快照，只能通过重新打开操作恢复为进行中。", 409);
     }
   }
 
@@ -98,6 +110,27 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
       if (!isCompletedSprintStatus(existing.status) && isCompletedSprintStatus(lockedExisting.status)) {
         throw new Error("COMPLETED_SPRINT");
+      }
+      if (!canTransitionSprintStatus(lockedExisting.status, status)) {
+        throw new Error("INVALID_SPRINT_TRANSITION");
+      }
+      if (projectId !== existing.projectId) {
+        const [lockedTaskCount] = await tx
+          .select({ value: count() })
+          .from(tasks)
+          .where(eq(tasks.sprintId, id));
+        if (Number(lockedTaskCount?.value ?? 0) > 0) {
+          throw new Error("SPRINT_HAS_TASKS");
+        }
+      }
+      if (lockedExisting.status === "active" && status === "completed") {
+        const [unfinishedTaskCount] = await tx
+          .select({ value: count() })
+          .from(tasks)
+          .where(and(eq(tasks.sprintId, id), ne(tasks.status, "done")));
+        if (Number(unfinishedTaskCount?.value ?? 0) > 0) {
+          throw new Error("SPRINT_HAS_UNFINISHED_TASKS");
+        }
       }
       if (status === "active") {
         await tx.execute(
@@ -132,7 +165,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         action: "sprint.update",
         entityType: "sprint",
         entityId: id,
-        metadata: { changedFields: Object.keys(body) },
+        metadata: {
+          changedFields: Object.keys(body),
+          fromStatus: existing.status,
+          toStatus: sprint.status,
+        },
       });
       return sprint;
     });
@@ -144,8 +181,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
       return apiError("已完成迭代为历史快照，请先重新打开后再修改。", 409);
     }
+    if (error instanceof Error && error.message === "INVALID_SPRINT_TRANSITION") {
+      return apiError("迭代状态只能按“未开始 → 进行中 → 已完成”流转。", 409);
+    }
+    if (error instanceof Error && error.message === "SPRINT_HAS_TASKS") {
+      return apiError("该迭代已规划任务，清空任务范围后才能更换项目。", 409);
+    }
+    if (error instanceof Error && error.message === "SPRINT_HAS_UNFINISHED_TASKS") {
+      return apiError("迭代仍有未完成任务，请先完成任务或将其移出本迭代。", 409);
+    }
     if (error instanceof Error && error.message === "SPRINT_CHANGED") {
       return apiError("迭代已被其他操作更新，请刷新后重试。", 409);
+    }
+    if (isConstraintViolation(error, "sprints_one_active_per_project")) {
+      return apiError("同一项目只能有一个进行中的迭代。", 409);
     }
     if (isUniqueViolation(error)) return apiError("同一项目中不能存在重名迭代。", 409);
     throw error;
@@ -191,6 +240,10 @@ export async function DELETE(request: Request, context: RouteContext) {
         throw new Error("SPRINT_CHANGED");
       }
       if (lockedExisting.status !== "planned") throw new Error("SPRINT_NOT_PLANNED");
+      await tx
+        .update(tasks)
+        .set({ sprintId: null, updatedAt: new Date() })
+        .where(eq(tasks.sprintId, id));
       const [deleted] = await tx
         .delete(sprints)
         .where(eq(sprints.id, id))

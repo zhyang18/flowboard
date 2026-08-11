@@ -2,6 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
+  attachments,
   auditLogs,
   projectMembers,
   sprints,
@@ -16,6 +17,7 @@ import {
   getProjectAccess,
 } from "@/lib/authorization";
 import { apiError, textValue } from "@/lib/api";
+import { attachmentDraftToken } from "@/lib/attachments";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
@@ -138,6 +140,15 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const status = isTaskStatus(body.status) ? body.status : existing.status;
   if (
+    currentUser.role === "tester" &&
+    !managesExistingProject &&
+    existing.status === "review" &&
+    status !== "review" &&
+    status !== "done"
+  ) {
+    return apiError("测试不通过请填写原因并使用任务打回操作。", 409);
+  }
+  if (
     existing.status === "done" &&
     status === "done" &&
     testerId !== existing.testerId
@@ -216,6 +227,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const title = "title" in body ? textValue(body.title, 160) : existing.title;
+  const draftToken = attachmentDraftToken(body.attachmentDraftToken);
   if (!title) return apiError("任务标题不能为空。");
   const dueDate = "dueDate" in body ? parseDate(body.dueDate) : existing.dueDate;
   if (dueDate === undefined) return apiError("截止日期格式无效。");
@@ -278,7 +290,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           sprintId,
           title,
           description:
-            "description" in body ? textValue(body.description, 1500) : existing.description,
+            "description" in body ? textValue(body.description, 10_000) : existing.description,
           status,
           priority: isTaskPriority(body.priority) ? body.priority : existing.priority,
           assigneeId,
@@ -296,6 +308,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         })
         .where(eq(tasks.id, id))
         .returning();
+      if (draftToken) {
+        await tx
+          .update(attachments)
+          .set({ taskId: id, draftToken: null })
+          .where(
+            and(
+              eq(attachments.draftToken, draftToken),
+              eq(attachments.uploadedBy, currentUser.id),
+            ),
+          );
+      }
       await tx.insert(auditLogs).values({
         actorId: currentUser.id,
         action: "task.update",

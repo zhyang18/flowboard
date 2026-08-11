@@ -11,6 +11,7 @@ import {
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
+  attachments,
   auditLogs,
   projectMembers,
   projects,
@@ -26,6 +27,7 @@ import {
   getProjectAccess,
 } from "@/lib/authorization";
 import { apiError, isUniqueViolation, textValue } from "@/lib/api";
+import { attachmentDraftToken } from "@/lib/attachments";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { projectLifecycleLockQueries } from "@/lib/sprints";
@@ -162,6 +164,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const name = "name" in body ? textValue(body.name, 80) : existing.name;
   const code = "code" in body ? projectCode(body.code) : existing.code;
+  const draftToken = attachmentDraftToken(body.attachmentDraftToken);
   if (!name || !code) return apiError("项目名称和代号不能为空。");
 
   try {
@@ -175,7 +178,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           name,
           code,
           description:
-            "description" in body ? textValue(body.description, 500) : existing.description,
+            "description" in body ? textValue(body.description, 10_000) : existing.description,
           color:
             "color" in body && /^#[0-9a-f]{6}$/i.test(String(body.color))
               ? String(body.color)
@@ -188,6 +191,18 @@ export async function PATCH(request: Request, context: RouteContext) {
         })
         .where(eq(projects.id, id))
         .returning();
+
+      if (draftToken) {
+        await tx
+          .update(attachments)
+          .set({ projectId: id, draftToken: null })
+          .where(
+            and(
+              eq(attachments.draftToken, draftToken),
+              eq(attachments.uploadedBy, currentUser.id),
+            ),
+          );
+      }
 
       await tx
         .update(tasks)
