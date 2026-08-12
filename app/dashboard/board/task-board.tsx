@@ -37,7 +37,7 @@ import {
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
 import RichTextContent from "../rich-text-content";
-import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
+import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
 type BoardTask = {
   id: string;
@@ -180,7 +180,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [testerId, setTesterId] = useState("");
   const [sprintId, setSprintId] = useState("");
   const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("card");
+  const [viewMode, setViewMode] = usePersistentViewMode(
+    "flowboard:tasks:view-mode",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -576,13 +578,15 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           </select>
           <ChevronDown size={14} />
         </label>
-        <span className="toolbar-result">显示 {tasks.length} 项任务</span>
-        <ViewModeToggle
-          value={viewMode}
-          onChange={setViewMode}
-          cardLabel="切换为任务看板布局"
-          listLabel="切换为任务列表布局"
-        />
+        <div className="toolbar-view-options">
+          <span className="toolbar-result">显示 {tasks.length} 项任务</span>
+          <ViewModeToggle
+            value={viewMode}
+            onChange={setViewMode}
+            cardLabel="切换为任务看板布局"
+            listLabel="切换为任务列表布局"
+          />
+        </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}

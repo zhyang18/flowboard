@@ -28,7 +28,7 @@ import { projectStatusLabels } from "@/lib/workspace";
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
 import RichTextContent from "../rich-text-content";
-import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
+import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
 type ProjectRecord = {
   id: string;
@@ -123,7 +123,9 @@ export default function ProjectManagement() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | ProjectStatus>("");
   const [scope, setScope] = useState<"active" | "archived">("active");
-  const [viewMode, setViewMode] = useState<ViewMode>("card");
+  const [viewMode, setViewMode] = usePersistentViewMode(
+    "flowboard:projects:view-mode",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -413,13 +415,15 @@ export default function ProjectManagement() {
             <option value="archived">已归档项目</option>
           </select>
         </label>
-        <span className="toolbar-result">显示 {filtered.length} 个项目</span>
-        <ViewModeToggle
-          value={viewMode}
-          onChange={setViewMode}
-          cardLabel="切换为项目卡片布局"
-          listLabel="切换为项目列表布局"
-        />
+        <div className="toolbar-view-options">
+          <span className="toolbar-result">显示 {filtered.length} 个项目</span>
+          <ViewModeToggle
+            value={viewMode}
+            onChange={setViewMode}
+            cardLabel="切换为项目卡片布局"
+            listLabel="切换为项目列表布局"
+          />
+        </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}

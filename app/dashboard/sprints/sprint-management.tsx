@@ -23,7 +23,7 @@ import {
 } from "react";
 import type { SprintStatus, TaskStatus } from "@/db/schema";
 import { sprintStatusLabels, taskStatusLabels } from "@/lib/workspace";
-import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
+import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
 type SprintTask = {
   id: string;
@@ -122,7 +122,9 @@ export default function SprintManagement() {
   const [canCreate, setCanCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | SprintStatus>("");
-  const [viewMode, setViewMode] = useState<ViewMode>("card");
+  const [viewMode, setViewMode] = usePersistentViewMode(
+    "flowboard:sprints:view-mode",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -443,13 +445,15 @@ export default function SprintManagement() {
             {Object.entries(sprintStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
-        <span className="toolbar-result">显示 {filtered.length} 个迭代</span>
-        <ViewModeToggle
-          value={viewMode}
-          onChange={setViewMode}
-          cardLabel="切换为迭代卡片布局"
-          listLabel="切换为迭代列表布局"
-        />
+        <div className="toolbar-view-options">
+          <span className="toolbar-result">显示 {filtered.length} 个迭代</span>
+          <ViewModeToggle
+            value={viewMode}
+            onChange={setViewMode}
+            cardLabel="切换为迭代卡片布局"
+            listLabel="切换为迭代列表布局"
+          />
+        </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}

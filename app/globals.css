@@ -2854,10 +2854,25 @@ textarea {
 }
 
 .toolbar-result {
+  flex: 0 0 auto;
   margin-left: auto;
   padding-right: 5px;
   color: var(--ink-500);
   font-size: 11px;
+  white-space: nowrap;
+}
+
+.toolbar-view-options {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.toolbar-view-options .toolbar-result {
+  margin-left: 0;
+  padding-right: 0;
 }
 
 .view-mode-toggle {
@@ -3977,6 +3992,10 @@ textarea {
 
 .board-toolbar .module-search {
   flex: 1;
+}
+
+.board-toolbar {
+  flex-wrap: wrap;
 }
 
 .board-toolbar .module-select {
@@ -5633,10 +5652,6 @@ textarea {
 
   .toolbar-result {
     margin-left: 0;
-  }
-
-  .view-mode-toggle {
-    margin-left: auto;
   }
 
   .board-toolbar .module-select {
