@@ -5,6 +5,10 @@ import type { FormEvent } from "react";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+const showDemoCredentials = process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true";
+const demoEmail = process.env.NEXT_PUBLIC_DEMO_EMAIL ?? "admin@flowboard.local";
+const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "Admin@123456";
+
 /**
  * 渲染登录表单并管理登录请求状态。
  *
@@ -12,16 +16,8 @@ import { useRouter } from "next/navigation";
  */
 export default function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState(
-    process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true"
-      ? "admin@flowboard.local"
-      : "",
-  );
-  const [password, setPassword] = useState(
-    process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true"
-      ? "Admin@123456"
-      : "",
-  );
+  const [email, setEmail] = useState(showDemoCredentials ? demoEmail : "");
+  const [password, setPassword] = useState(showDemoCredentials ? demoPassword : "");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -131,10 +127,10 @@ export default function LoginForm() {
         {!submitting && <ArrowRight size={18} />}
       </button>
 
-      {process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true" && (
+      {showDemoCredentials && (
         <div className="demo-account">
           <span>演示账号</span>
-          <p>admin@flowboard.local　/　Admin@123456</p>
+          <p>{demoEmail}　/　{demoPassword}</p>
         </div>
       )}
     </form>

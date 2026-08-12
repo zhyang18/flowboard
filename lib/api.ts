@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { CurrentUser } from "./session";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * 构造统一 JSON 错误响应。
  *
@@ -41,6 +43,16 @@ export function normalizeEmail(value: unknown) {
  */
 export function textValue(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+/**
+ * 校验并返回通用 UUID 标识。
+ *
+ * @param value 待校验的外部输入。
+ * @return 有效 UUID 字符串，无效时返回 null。
+ */
+export function uuidValue(value: unknown): string | null {
+  return typeof value === "string" && UUID_PATTERN.test(value) ? value : null;
 }
 
 /**

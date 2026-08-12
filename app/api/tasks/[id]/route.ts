@@ -32,6 +32,7 @@ import {
   safeHours,
   serializeTask,
 } from "@/lib/workspace";
+import { hasRecordedActualHours } from "@/lib/work-logs";
 
 export const runtime = "nodejs";
 
@@ -139,6 +140,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const status = isTaskStatus(body.status) ? body.status : existing.status;
+  if (
+    status === "done" &&
+    existing.status !== "done" &&
+    !hasRecordedActualHours(existing.actualHours)
+  ) {
+    return apiError("请先登记实际工时，再将任务标记为已完成。", 409);
+  }
   if (
     currentUser.role === "tester" &&
     !managesExistingProject &&
@@ -248,6 +256,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
       const [lockedTask] = await tx
         .select({
+          actualHours: tasks.actualHours,
           updatedAt: tasks.updatedAt,
           sprintStatus: sprints.status,
         })
@@ -260,6 +269,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
       if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
         throw new Error("COMPLETED_SPRINT");
+      }
+      if (
+        status === "done" &&
+        existing.status !== "done" &&
+        !hasRecordedActualHours(lockedTask.actualHours)
+      ) {
+        throw new Error("TASK_HAS_NO_WORK_LOGS");
       }
       if (sprintId) {
         const [lockedSprint] = await tx
@@ -340,6 +356,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "TASK_CHANGED") {
       return apiError("任务已被其他操作更新，请刷新后重试。", 409);
+    }
+    if (error instanceof Error && error.message === "TASK_HAS_NO_WORK_LOGS") {
+      return apiError("请先登记实际工时，再将任务标记为已完成。", 409);
     }
     throw error;
   }

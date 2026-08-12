@@ -3805,7 +3805,8 @@ textarea {
   color: var(--ink-400);
 }
 
-.task-card-actions button {
+.task-card-actions button,
+.task-card-actions a {
   width: 26px;
   height: 26px;
   display: grid;
@@ -3816,9 +3817,16 @@ textarea {
   color: var(--ink-400);
 }
 
-.task-card-actions button:hover {
+.task-card-actions button:hover,
+.task-card-actions a:hover {
   background: #eff3f7;
   color: var(--ink-700);
+}
+
+.kanban-task.deep-linked {
+  outline: 2px solid color-mix(in srgb, var(--blue-500) 68%, transparent);
+  outline-offset: 2px;
+  box-shadow: 0 8px 22px rgb(47 125 246 / 18%);
 }
 
 .task-project {
@@ -3897,6 +3905,27 @@ textarea {
 .task-time-grid b {
   color: var(--ink-700);
   font-size: 9px;
+}
+
+.task-log-work {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border: 1px solid #cfe0fb;
+  border-radius: 7px;
+  background: #f2f7ff;
+  color: var(--blue-700);
+  font-size: 8px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.task-log-work:hover {
+  border-color: #9fc0f3;
+  background: #e8f1ff;
 }
 
 .kanban-task > footer {

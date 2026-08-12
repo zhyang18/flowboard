@@ -45,10 +45,10 @@ export async function DELETE(request: Request, context: RouteContext) {
     projectId = rejection?.projectId ?? null;
   }
   const access = projectId ? await getProjectAccess(currentUser, projectId) : null;
-  const canDelete =
-    attachment.uploadedBy === currentUser.id ||
-    canManageProject(currentUser, access) ||
-    Boolean(editableTask && canEditTask(currentUser, access, editableTask));
+  const canDelete = attachment.draftToken
+    ? attachment.uploadedBy === currentUser.id
+    : canManageProject(currentUser, access) ||
+      Boolean(editableTask && canEditTask(currentUser, access, editableTask));
   if (!canDelete) return apiError("无权删除该附件。", 403);
 
   await db.delete(attachments).where(eq(attachments.id, id));

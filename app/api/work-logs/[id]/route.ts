@@ -10,6 +10,7 @@ import {
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "@/lib/sprints";
+import { canDeleteWorkLog } from "@/lib/work-logs";
 
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
@@ -35,6 +36,8 @@ export async function DELETE(request: Request, context: RouteContext) {
       userId: workLogs.userId,
       durationHours: workLogs.durationHours,
       projectId: tasks.projectId,
+      taskStatus: tasks.status,
+      taskActualHours: tasks.actualHours,
       sprintStatus: sprints.status,
     })
     .from(workLogs)
@@ -64,6 +67,8 @@ export async function DELETE(request: Request, context: RouteContext) {
           userId: workLogs.userId,
           durationHours: workLogs.durationHours,
           projectId: tasks.projectId,
+          taskStatus: tasks.status,
+          taskActualHours: tasks.actualHours,
           sprintStatus: sprints.status,
         })
         .from(workLogs)
@@ -80,6 +85,13 @@ export async function DELETE(request: Request, context: RouteContext) {
       }
       if (isCompletedSprintStatus(lockedExisting.sprintStatus)) {
         throw new Error("COMPLETED_SPRINT");
+      }
+      if (!canDeleteWorkLog(
+        lockedExisting.taskStatus,
+        lockedExisting.taskActualHours,
+        lockedExisting.durationHours,
+      )) {
+        throw new Error("DONE_TASK_REQUIRES_WORK_LOG");
       }
       const [deleted] = await tx
         .delete(workLogs)
@@ -121,6 +133,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "COMPLETED_SPRINT") {
       return apiError("已完成迭代为历史快照，请先重新打开后再删除工时。", 409);
+    }
+    if (error instanceof Error && error.message === "DONE_TASK_REQUIRES_WORK_LOG") {
+      return apiError("已完成任务必须保留实际工时；请先重新打开任务再删除最后一条工时。", 409);
     }
     throw error;
   }

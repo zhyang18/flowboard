@@ -114,7 +114,7 @@ function buildTaskNotification(
     title: task.title,
     detail,
     timeLabel: notificationTimeLabel(occurredAt, timeZone),
-    href: "/dashboard/board",
+    href: `/dashboard/board?taskId=${task.id}`,
     occurredAt: occurredAt.toISOString(),
   };
 }

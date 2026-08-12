@@ -32,7 +32,7 @@ import {
   getProjectAccess,
   projectVisibilityCondition,
 } from "@/lib/authorization";
-import { apiError, textValue } from "@/lib/api";
+import { apiError, textValue, uuidValue } from "@/lib/api";
 import { attachmentDraftToken } from "@/lib/attachments";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
@@ -48,6 +48,7 @@ import {
   safeHours,
   serializeTask,
 } from "@/lib/workspace";
+import { canBackfillCompletedTaskWork } from "@/lib/work-logs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +72,10 @@ export async function GET(request: Request) {
   const assigneeId = searchParams.get("assigneeId") ?? "";
   const testerId = searchParams.get("testerId") ?? "";
   const sprintId = searchParams.get("sprintId") ?? "";
+  const requestedTaskId = searchParams.get("taskId");
+  const taskId = uuidValue(requestedTaskId);
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
+  if (requestedTaskId && !taskId) return apiError("任务 ID 格式无效。");
   const conditions: SQL[] = [
     eq(projects.archived, false),
     projectVisibilityCondition(currentUser, tasks.projectId),
@@ -81,6 +85,7 @@ export async function GET(request: Request) {
   if (testerId) conditions.push(eq(tasks.testerId, testerId));
   if (sprintId === "unplanned") conditions.push(isNull(tasks.sprintId));
   else if (sprintId) conditions.push(eq(tasks.sprintId, sprintId));
+  if (taskId) conditions.push(eq(tasks.id, taskId));
   if (query) {
     const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
     conditions.push(or(ilike(tasks.title, pattern), ilike(tasks.description, pattern))!);
@@ -279,6 +284,18 @@ export async function GET(request: Request) {
           row.task.testerId === currentUser.id &&
           currentUser.role === "tester" &&
           !isCompletedSprintStatus(row.sprintStatus),
+        canLogWork:
+          canContributeToProject(currentUser, access) &&
+          (currentUser.role !== "tester" || row.task.testerId === currentUser.id) &&
+          (
+            !isCompletedSprintStatus(row.sprintStatus) ||
+            canBackfillCompletedTaskWork(
+              row.sprintStatus,
+              row.task.status,
+              row.task.actualHours,
+              canManageProject(currentUser, access),
+            )
+          ),
         canDelete:
           !isCompletedSprintStatus(row.sprintStatus) &&
           (canManageProject(currentUser, access) || row.task.reporterId === currentUser.id),
@@ -368,8 +385,8 @@ export async function POST(request: Request) {
     currentUser.role === "tester" && !canManageProject(currentUser, access)
       ? currentUser.id
       : requestedTesterId;
-  if (status === "done" && testerId) {
-    return apiError("已指派测试负责人的任务必须先进入待评审，再由测试人员验收完成。", 409);
+  if (status === "done") {
+    return apiError("新建任务后请先登记实际工时，再将任务标记为已完成。", 409);
   }
 
   const settings = (await getWorkspaceSettings()) ?? defaultWorkspaceSettings;
@@ -461,8 +478,7 @@ export async function POST(request: Request) {
           actualHours: 0,
           sortOrder: Number(order?.value ?? 0),
           dueDate,
-          completedAt:
-            status === "done" && settings.autoCompleteTimestamp ? new Date() : null,
+          completedAt: null,
         })
         .returning();
       if (draftToken) {

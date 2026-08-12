@@ -53,4 +53,5 @@ test("待验收和三天内到期任务会生成对应消息", () => {
   ], { now, notifyOverdue: true, timeZone: "Asia/Singapore" });
 
   assert.deepEqual(result.map((item) => item.kind), ["review", "due_soon"]);
+  assert.equal(result[0]?.href, "/dashboard/board?taskId=review");
 });

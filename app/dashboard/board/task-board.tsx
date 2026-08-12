@@ -25,6 +25,7 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
+import Link from "next/link";
 import type { SprintStatus, TaskPriority, TaskStatus, UserRole } from "@/db/schema";
 import {
   sprintStatusLabels,
@@ -62,6 +63,7 @@ type BoardTask = {
   canEdit: boolean;
   canDelete: boolean;
   canManageProject: boolean;
+  canLogWork: boolean;
   canReject: boolean;
   latestRejection: {
     id: string;
@@ -158,9 +160,10 @@ function completedLabel(value: string | null) {
 /**
  * 渲染按项目权限过滤的任务看板。
  *
+ * @param initialTaskId 从消息提醒带入并需要聚焦的任务 ID。
  * @return 任务看板组件。
  */
-export default function TaskBoard() {
+export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: string }) {
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
@@ -203,6 +206,7 @@ export default function TaskBoard() {
     if (assigneeId) params.set("assigneeId", assigneeId);
     if (testerId) params.set("testerId", testerId);
     if (sprintId) params.set("sprintId", sprintId);
+    if (initialTaskId) params.set("taskId", initialTaskId);
     if (query.trim()) params.set("query", query.trim());
     try {
       const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
@@ -233,7 +237,7 @@ export default function TaskBoard() {
     } finally {
       setLoading(false);
     }
-  }, [assigneeId, projectId, query, sprintId, testerId]);
+  }, [assigneeId, initialTaskId, projectId, query, sprintId, testerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
@@ -245,6 +249,18 @@ export default function TaskBoard() {
     const timer = window.setTimeout(() => setNotice(""), 2200);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!initialTaskId || loading || !tasks.some((task) => task.id === initialTaskId)) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`task-${initialTaskId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialTaskId, loading, tasks]);
 
   const metrics = useMemo(() => {
     const estimate = tasks.reduce((sum, task) => sum + task.estimateHours, 0);
@@ -599,7 +615,8 @@ export default function TaskBoard() {
                       const overdue = task.overdue;
                       return (
                         <article
-                          className={`kanban-task ${draggedId === task.id ? "dragging" : ""}`}
+                          className={`kanban-task ${draggedId === task.id ? "dragging" : ""} ${initialTaskId === task.id ? "deep-linked" : ""}`}
+                          id={`task-${task.id}`}
                           key={task.id}
                           draggable={task.canEdit}
                           onDragStart={(event) => {
@@ -642,6 +659,14 @@ export default function TaskBoard() {
                               <b>{Math.abs(remaining).toFixed(1)}h</b>
                             </span>
                           </div>
+                          {task.canLogWork && (
+                            <Link className="task-log-work" href={`/dashboard/time?taskId=${task.id}`}>
+                              <Clock3 size={12} />
+                              {task.status === "done" && task.actualHours <= 0
+                                ? "补录实际工时"
+                                : "登记实际工时"}
+                            </Link>
+                          )}
                           <footer>
                             <span className={overdue ? "risk" : ""}>
                               {overdue ? <CircleAlert size={13} /> : <CalendarClock size={13} />}

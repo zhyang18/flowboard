@@ -36,6 +36,7 @@ import {
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "@/lib/sprints";
+import { canBackfillCompletedTaskWork } from "@/lib/work-logs";
 import { parseDate, safeHours } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -152,6 +153,8 @@ export async function GET(request: Request) {
             title: tasks.title,
             projectId: tasks.projectId,
             testerId: tasks.testerId,
+            status: tasks.status,
+            actualHours: tasks.actualHours,
             sprintStatus: sprints.status,
           })
           .from(tasks)
@@ -250,7 +253,15 @@ export async function GET(request: Request) {
     })),
     users: [...userMap.values()],
     tasks: taskRows
-      .filter((task) => !isCompletedSprintStatus(task.sprintStatus))
+      .filter((task) => {
+        if (!isCompletedSprintStatus(task.sprintStatus)) return true;
+        return canBackfillCompletedTaskWork(
+          task.sprintStatus,
+          task.status,
+          task.actualHours,
+          canManageProject(currentUser, accessMap.get(task.projectId) ?? null),
+        );
+      })
       .map((task) => ({
         id: task.id,
         title: task.title,
@@ -306,6 +317,8 @@ export async function POST(request: Request) {
       id: tasks.id,
       projectId: tasks.projectId,
       testerId: tasks.testerId,
+      status: tasks.status,
+      actualHours: tasks.actualHours,
       archived: projects.archived,
       sprintStatus: sprints.status,
     })
@@ -317,7 +330,13 @@ export async function POST(request: Request) {
   if (!task) return apiError("任务不存在。", 404);
   const access = await getProjectAccess(currentUser, task.projectId);
   if (!access || task.archived) return apiError("任务不存在。", 404);
-  if (isCompletedSprintStatus(task.sprintStatus)) {
+  const repairsMissingCompletedWork = canBackfillCompletedTaskWork(
+    task.sprintStatus,
+    task.status,
+    task.actualHours,
+    canManageProject(currentUser, access),
+  );
+  if (isCompletedSprintStatus(task.sprintStatus) && !repairsMissingCompletedWork) {
     return apiError("已完成迭代为历史快照，请先重新打开后再登记工时。", 409);
   }
   if (!canContributeToProject(currentUser, access)) {
@@ -365,7 +384,12 @@ export async function POST(request: Request) {
         await tx.execute(lockQuery);
       }
       const [lockedTask] = await tx
-        .select({ projectId: tasks.projectId, sprintStatus: sprints.status })
+        .select({
+          projectId: tasks.projectId,
+          status: tasks.status,
+          actualHours: tasks.actualHours,
+          sprintStatus: sprints.status,
+        })
         .from(tasks)
         .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
         .where(eq(tasks.id, taskId))
@@ -373,7 +397,13 @@ export async function POST(request: Request) {
       if (!lockedTask || lockedTask.projectId !== task.projectId) {
         throw new Error("TASK_CHANGED");
       }
-      if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
+      const repairsLockedMissingWork = canBackfillCompletedTaskWork(
+        lockedTask.sprintStatus,
+        lockedTask.status,
+        lockedTask.actualHours,
+        canManageProject(currentUser, access),
+      );
+      if (isCompletedSprintStatus(lockedTask.sprintStatus) && !repairsLockedMissingWork) {
         throw new Error("COMPLETED_SPRINT");
       }
       await tx.execute(

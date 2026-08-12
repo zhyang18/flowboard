@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -104,9 +105,10 @@ function defaultLogUserId(
 /**
  * 渲染工时筛选、趋势、明细和登记表单。
  *
+ * @param initialTaskId 从任务看板或消息提醒带入的待登记任务 ID。
  * @return 工时分析组件。
  */
-export default function TimeAnalysis() {
+export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: string }) {
   const [logs, setLogs] = useState<WorkLogRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -131,6 +133,7 @@ export default function TimeAnalysis() {
     durationHours: 1,
     note: "",
   });
+  const initialTaskHandled = useRef(false);
 
   /**
    * 按项目、成员和日期范围加载工时数据。
@@ -157,12 +160,48 @@ export default function TimeAnalysis() {
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "工时记录加载失败。");
+      const nextProjects = result.projects ?? [];
+      const nextUsers = result.users ?? [];
+      const nextTasks = result.tasks ?? [];
+      const nextCurrentUserId = result.currentUserId ?? "";
       setLogs(result.data ?? []);
-      setProjects(result.projects ?? []);
-      setUsers(result.users ?? []);
-      setTasks(result.tasks ?? []);
-      setCurrentUserId(result.currentUserId ?? "");
+      setProjects(nextProjects);
+      setUsers(nextUsers);
+      setTasks(nextTasks);
+      setCurrentUserId(nextCurrentUserId);
       setCanCreate(Boolean(result.canCreate));
+      if (initialTaskId && !initialTaskHandled.current) {
+        initialTaskHandled.current = true;
+        const targetTask = nextTasks.find((task) => task.id === initialTaskId);
+        const targetProject = nextProjects.find(
+          (project) => project.id === targetTask?.projectId && project.canLog,
+        );
+        if (targetTask && targetProject) {
+          const nextUserId = defaultLogUserId(
+            nextUsers,
+            targetProject.id,
+            nextCurrentUserId,
+            userId,
+            targetProject.canManage,
+          );
+          const nextUser = nextUsers.find((user) => user.id === nextUserId);
+          if (nextUser && (nextUser.role !== "tester" || targetTask.testerId === nextUserId)) {
+            setForm({
+              projectId: targetProject.id,
+              taskId: targetTask.id,
+              userId: nextUserId,
+              workDate: initialTo,
+              durationHours: 1,
+              note: "",
+            });
+            setModalOpen(true);
+          } else {
+            setError("当前账号不能为该任务登记工时。");
+          }
+        } else {
+          setError("指定任务不存在、已归档或所属迭代已经完成。");
+        }
+      }
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "工时记录加载失败。",
@@ -170,7 +209,7 @@ export default function TimeAnalysis() {
     } finally {
       setLoading(false);
     }
-  }, [from, projectId, to, userId]);
+  }, [from, initialTaskId, projectId, to, userId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadLogs(), 0);

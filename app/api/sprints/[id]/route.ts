@@ -131,6 +131,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         if (Number(unfinishedTaskCount?.value ?? 0) > 0) {
           throw new Error("SPRINT_HAS_UNFINISHED_TASKS");
         }
+        const [unloggedTaskCount] = await tx
+          .select({ value: count() })
+          .from(tasks)
+          .where(and(eq(tasks.sprintId, id), sql`${tasks.actualHours} <= 0`));
+        if (Number(unloggedTaskCount?.value ?? 0) > 0) {
+          throw new Error("SPRINT_HAS_UNLOGGED_TASKS");
+        }
       }
       if (status === "active") {
         await tx.execute(
@@ -189,6 +196,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "SPRINT_HAS_UNFINISHED_TASKS") {
       return apiError("迭代仍有未完成任务，请先完成任务或将其移出本迭代。", 409);
+    }
+    if (error instanceof Error && error.message === "SPRINT_HAS_UNLOGGED_TASKS") {
+      return apiError("迭代中存在实际工时为 0 的任务，请先补录工时再完成迭代。", 409);
     }
     if (error instanceof Error && error.message === "SPRINT_CHANGED") {
       return apiError("迭代已被其他操作更新，请刷新后重试。", 409);
