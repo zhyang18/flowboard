@@ -4,6 +4,7 @@ import {
   projectMembers,
   projects,
   type ProjectMemberRole,
+  type TaskStatus,
 } from "@/db/schema";
 import type { CurrentUser } from "@/lib/session";
 
@@ -199,10 +200,32 @@ export function canEditTask(
 ): boolean {
   if (canManageProject(user, access)) return true;
   if (!canContributeToProject(user, access)) return false;
-  if (user.role === "tester") return task.testerId === user.id;
-  return (
-    task.assigneeId === user.id || task.reporterId === user.id
-  );
+  if (user.role === "tester") return false;
+  return task.assigneeId === user.id || task.reporterId === user.id;
+}
+
+/**
+ * 判断当前用户是否是任务当前阶段唯一允许流转状态的指派人员。
+ *
+ * @param user 当前登录用户。
+ * @param access 任务所属项目的访问关系。
+ * @param task 任务当前状态以及开发、测试负责人关系。
+ * @return 开发阶段由开发负责人返回 true；待评审阶段由指定测试负责人返回 true。
+ */
+export function canChangeTaskStatus(
+  user: Pick<CurrentUser, "id" | "role">,
+  access: ProjectAccess | null,
+  task: {
+    status: TaskStatus;
+    assigneeId: string | null;
+    testerId: string | null;
+  },
+): boolean {
+  if (!canContributeToProject(user, access)) return false;
+  if (task.status === "review" && task.testerId) {
+    return user.role === "tester" && task.testerId === user.id;
+  }
+  return user.role !== "tester" && task.assigneeId === user.id;
 }
 
 /**
@@ -256,9 +279,9 @@ export function canApproveTaskCompletion(
   access: ProjectAccess | null,
   task: { assigneeId: string | null; testerId: string | null; reporterId: string },
 ): boolean {
-  if (!task.testerId) return canEditTask(user, access, task);
-  return (
-    canManageProject(user, access) ||
-    (user.role === "tester" && task.testerId === user.id)
-  );
+  if (!canContributeToProject(user, access)) return false;
+  if (task.testerId) {
+    return user.role === "tester" && task.testerId === user.id;
+  }
+  return user.role !== "tester" && task.assigneeId === user.id;
 }

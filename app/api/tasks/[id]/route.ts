@@ -5,6 +5,7 @@ import {
   attachments,
   auditLogs,
   projectMembers,
+  projects,
   sprints,
   tasks,
   users,
@@ -12,6 +13,7 @@ import {
 } from "@/db/schema";
 import {
   canApproveTaskCompletion,
+  canChangeTaskStatus,
   canEditTask,
   canManageProject,
   getProjectAccess,
@@ -60,6 +62,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   if ("actualHours" in body) {
     return apiError("实际工时由工时明细自动汇总，不能直接修改。");
   }
+  if ("status" in body && !isTaskStatus(body.status)) {
+    return apiError("任务状态无效。");
+  }
 
   const db = getDb();
   const [existingRecord] = await db
@@ -72,7 +77,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   const existing = existingRecord.task;
   const existingAccess = await getProjectAccess(currentUser, existing.projectId);
   if (!existingAccess) return apiError("任务不存在。", 404);
-  if (!canEditTask(currentUser, existingAccess, existing)) {
+  const canEditDetails = canEditTask(currentUser, existingAccess, existing);
+  const canChangeStatus = canChangeTaskStatus(currentUser, existingAccess, existing);
+  const statusOnlyRequest =
+    Object.keys(body).length > 0 && Object.keys(body).every((field) => field === "status");
+  if (!canEditDetails && !(statusOnlyRequest && canChangeStatus)) {
     return apiError("无权编辑该任务。", 403);
   }
   if (isCompletedSprintStatus(existingRecord.sprintStatus)) {
@@ -140,6 +149,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const status = isTaskStatus(body.status) ? body.status : existing.status;
+  if (status !== existing.status && !canChangeStatus) {
+    return apiError("只有任务当前阶段的指派负责人可以修改状态。", 403);
+  }
   if (
     status === "done" &&
     existing.status !== "done" &&
@@ -257,10 +269,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       const [lockedTask] = await tx
         .select({
           actualHours: tasks.actualHours,
+          archived: projects.archived,
           updatedAt: tasks.updatedAt,
           sprintStatus: sprints.status,
         })
         .from(tasks)
+        .innerJoin(projects, eq(tasks.projectId, projects.id))
         .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
         .where(eq(tasks.id, id))
         .limit(1);
@@ -270,6 +284,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (isCompletedSprintStatus(lockedTask.sprintStatus)) {
         throw new Error("COMPLETED_SPRINT");
       }
+      if (lockedTask.archived) throw new Error("PROJECT_ARCHIVED");
       if (
         status === "done" &&
         existing.status !== "done" &&
@@ -356,6 +371,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "TASK_CHANGED") {
       return apiError("任务已被其他操作更新，请刷新后重试。", 409);
+    }
+    if (error instanceof Error && error.message === "PROJECT_ARCHIVED") {
+      return apiError("项目已归档，不能继续修改任务。", 409);
     }
     if (error instanceof Error && error.message === "TASK_HAS_NO_WORK_LOGS") {
       return apiError("请先登记实际工时，再将任务标记为已完成。", 409);

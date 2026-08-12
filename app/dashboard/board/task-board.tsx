@@ -62,6 +62,7 @@ type BoardTask = {
   dueDate: string | null;
   completedAt: string | null;
   canEdit: boolean;
+  canChangeStatus: boolean;
   canDelete: boolean;
   canManageProject: boolean;
   canLogWork: boolean;
@@ -110,6 +111,43 @@ type WorkLogForm = {
   durationHours: number;
   note: string;
 };
+
+/**
+ * 突出展示任务所属项目、迭代名称和迭代状态。
+ *
+ * @param task 包含项目与迭代归属信息的任务。
+ * @param compact 是否使用列表视图的紧凑布局。
+ * @return 任务项目和迭代归属信息块。
+ */
+function TaskContext({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
+  const sprintState = task.sprintStatus ?? "unplanned";
+  return (
+    <div className={`task-context${compact ? " compact" : ""}`}>
+      <div
+        className="task-project-context"
+        style={{ borderLeftColor: task.projectColor }}
+        title={`所属项目：${task.projectCode} · ${task.projectName}`}
+      >
+        <span className="task-project-code">{task.projectCode}</span>
+        <span>
+          <small>所属项目</small>
+          <strong>{task.projectName}</strong>
+        </span>
+      </div>
+      <div
+        className={`task-sprint-context sprint-${sprintState}`}
+        title={`所属迭代：${task.sprintName ?? "未规划迭代"}`}
+      >
+        <CalendarRange size={15} />
+        <span>
+          <small>所属迭代</small>
+          <strong>{task.sprintName ?? "未规划迭代"}</strong>
+        </span>
+        <em>{task.sprintStatus ? sprintStatusLabels[task.sprintStatus] : "待规划"}</em>
+      </div>
+    </div>
+  );
+}
 
 const emptyForm: TaskForm = {
   projectId: "",
@@ -411,6 +449,8 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * @return 更新完成后的 Promise。
    */
   async function updateStatus(taskId: string, status: TaskStatus) {
+    const targetTask = tasks.find((task) => task.id === taskId);
+    if (!targetTask?.canChangeStatus || targetTask.status === status) return;
     const previous = tasks;
     setTasks((current) =>
       current.map((task) =>
@@ -457,7 +497,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     setDraggedId(null);
     setDropStatus(null);
     const task = tasks.find((item) => item.id === taskId);
-    if (task && task.status !== status) void updateStatus(task.id, status);
+    if (task?.canChangeStatus && task.status !== status) void updateStatus(task.id, status);
   }
 
   /**
@@ -696,7 +736,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                           className={`kanban-task ${draggedId === task.id ? "dragging" : ""} ${initialTaskId === task.id ? "deep-linked" : ""}`}
                           id={`task-${task.id}`}
                           key={task.id}
-                          draggable={task.canEdit}
+                          draggable={task.canChangeStatus}
                           onDragStart={(event) => {
                             setDraggedId(task.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -711,21 +751,16 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                             <span className={`task-priority priority-${task.priority}`}>
                               {taskPriorityLabels[task.priority]}
                             </span>
-                            {(task.canEdit || task.canDelete) && (
+                            {(task.canEdit || task.canChangeStatus || task.canReject || task.canDelete) && (
                               <div className="task-card-actions">
                                 {task.canEdit && <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>}
                                 {task.canReject && <button type="button" onClick={() => openReject(task)} aria-label={`测试打回 ${task.title}`}><Undo2 size={13} /></button>}
                                 {task.canDelete && <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>}
-                                {task.canEdit && <GripVertical size={14} />}
+                                {task.canChangeStatus && <GripVertical size={14} />}
                               </div>
                             )}
                           </header>
-                          <small className="task-project">
-                            <i style={{ background: task.projectColor }} /> {task.projectCode}
-                          </small>
-                          <small className={`task-sprint ${task.sprintStatus === "completed" ? "completed" : ""}`}>
-                            <CalendarRange size={11} /> {task.sprintName ?? "未规划迭代"}
-                          </small>
+                          <TaskContext task={task} />
                           <h3>{task.title}</h3>
                           {task.description && <RichTextContent value={task.description} />}
                           {task.attachmentCount > 0 && <AttachmentViewer owner={{ type: "taskId", id: task.id }} />}
@@ -791,6 +826,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
             <thead>
               <tr>
                 <th>任务</th>
+                <th>项目 / 迭代</th>
                 <th>状态</th>
                 <th>负责人</th>
                 <th>截止 / 完成</th>
@@ -803,7 +839,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 const remaining = task.estimateHours - task.actualHours;
                 const overrun = task.estimateHours > 0 && remaining < 0;
                 const hasActions =
-                  task.canEdit || task.canReject || task.canDelete || task.canLogWork;
+                  task.canEdit ||
+                  task.canChangeStatus ||
+                  task.canReject ||
+                  task.canDelete ||
+                  task.canLogWork;
                 return (
                   <tr
                     className={initialTaskId === task.id ? "deep-linked" : ""}
@@ -816,10 +856,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                           <span className={`task-priority priority-${task.priority}`}>
                             {taskPriorityLabels[task.priority]}
                           </span>
-                          <small className="task-project"><i style={{ background: task.projectColor }} /> {task.projectCode} · {task.projectName}</small>
-                          <small className={`task-sprint ${task.sprintStatus === "completed" ? "completed" : ""}`}>
-                            <CalendarRange size={11} /> {task.sprintName ?? "未规划迭代"}
-                          </small>
                         </div>
                         <strong>{task.title}</strong>
                         {task.description && <RichTextContent value={task.description} />}
@@ -829,8 +865,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                         )}
                       </div>
                     </td>
+                    <td><TaskContext task={task} compact /></td>
                     <td>
-                      {task.canEdit ? (
+                      {task.canChangeStatus ? (
                         <select
                           className={`task-status-select status-${task.status}`}
                           value={task.status}
@@ -981,7 +1018,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 </label>
                 <label>
                   <span>任务状态</span>
-                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}>
+                  <select disabled={Boolean(editingId && !editingTask?.canChangeStatus)} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}>
                     {taskStatuses.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}
                   </select>
                 </label>
@@ -1020,7 +1057,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
               </div>
               <div className="time-form-hint">
                 <Clock3 size={15} />
-                <span>开发和测试负责人分别参与任务执行与验收；实际工时仅由指定开发负责人在“工时分析”中登记并自动汇总，任务完成后记录实际完成时间。</span>
+                <span>开发负责人推进任务执行；进入待评审后由指定测试负责人验收或打回。实际工时由开发负责人在任务看板登记并自动汇总。</span>
               </div>
               <footer>
                 <button type="button" onClick={() => setModalOpen(false)}>取消</button>

@@ -4,6 +4,7 @@ import {
   canApproveTaskCompletion,
   canAssignTaskAssignee,
   canAssignTaskTester,
+  canChangeTaskStatus,
   canEditTask,
   canExportReports,
   canManageProject,
@@ -33,7 +34,7 @@ test("测试人员不能担任项目负责人并映射为测试项目成员", ()
   assert.equal(projectMemberRoleForUser("member", true), "manager");
 });
 
-test("测试人员只能编辑由自己负责验收的任务", () => {
+test("测试人员不能编辑任务资料，只能在待评审阶段流转自己负责验收的任务", () => {
   const user = { id: "tester-1", role: "tester" as const };
   assert.equal(
     canEditTask(user, projectAccess, {
@@ -41,13 +42,21 @@ test("测试人员只能编辑由自己负责验收的任务", () => {
       testerId: "tester-1",
       reporterId: "owner-1",
     }),
+    false,
+  );
+  assert.equal(
+    canChangeTaskStatus(user, projectAccess, {
+      status: "review",
+      assigneeId: "developer-1",
+      testerId: "tester-1",
+    }),
     true,
   );
   assert.equal(
-    canEditTask(user, projectAccess, {
-      assigneeId: "tester-1",
-      testerId: "tester-2",
-      reporterId: "tester-1",
+    canChangeTaskStatus(user, projectAccess, {
+      status: "in_progress",
+      assigneeId: "developer-1",
+      testerId: "tester-1",
     }),
     false,
   );
@@ -62,6 +71,39 @@ test("研发成员仍按开发负责人或创建人关系编辑任务", () => {
       reporterId: "owner-1",
     }),
     true,
+  );
+});
+
+test("只有任务当前阶段的指派负责人可以修改状态", () => {
+  const memberAccess = { ...projectAccess, memberRole: "member" as const };
+  const task = {
+    status: "in_progress" as const,
+    assigneeId: "developer-1",
+    testerId: "tester-1",
+  };
+  assert.equal(
+    canChangeTaskStatus({ id: "developer-1", role: "member" }, memberAccess, task),
+    true,
+  );
+  assert.equal(
+    canChangeTaskStatus({ id: "owner-1", role: "project_admin" }, memberAccess, task),
+    false,
+  );
+  assert.equal(
+    canChangeTaskStatus(
+      { id: "owner-1", role: "project_admin" },
+      { ...memberAccess, ownerId: "owner-1" },
+      task,
+    ),
+    false,
+  );
+  assert.equal(
+    canChangeTaskStatus(
+      { id: "developer-1", role: "member" },
+      memberAccess,
+      { ...task, status: "review" },
+    ),
+    false,
   );
 });
 
@@ -104,7 +146,7 @@ test("研发成员创建任务时可指派项目测试人员，测试人员只�
   );
 });
 
-test("带测试负责人的任务只能由测试人员或项目管理者验收完成", () => {
+test("带测试负责人的任务只能由指定测试人员验收完成", () => {
   const task = {
     assigneeId: "developer-1",
     testerId: "tester-1",
@@ -125,6 +167,14 @@ test("带测试负责人的任务只能由测试人员或项目管理者验收�
       task,
     ),
     true,
+  );
+  assert.equal(
+    canApproveTaskCompletion(
+      { id: "owner-1", role: "project_admin" },
+      { ...projectAccess, ownerId: "owner-1", memberRole: "manager" },
+      task,
+    ),
+    false,
   );
 });
 

@@ -27,6 +27,7 @@ import {
 import {
   canAssignTaskAssignee,
   canAssignTaskTester,
+  canChangeTaskStatus,
   canContributeToProject,
   canEditTask,
   canManageProject,
@@ -282,6 +283,9 @@ export async function GET(request: Request) {
         canEdit:
           !isCompletedSprintStatus(row.sprintStatus) &&
           canEditTask(currentUser, access, row.task),
+        canChangeStatus:
+          !isCompletedSprintStatus(row.sprintStatus) &&
+          canChangeTaskStatus(currentUser, access, row.task),
         canManageProject: canManageProject(currentUser, access),
         canReject:
           row.task.status === "review" &&

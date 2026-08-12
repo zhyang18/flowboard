@@ -349,14 +349,24 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
         {loading ? <div className="module-loading">正在加载工时记录…</div> : visibleLogs.length ? (
           <div className="work-log-table-wrap">
             <table className="work-log-table">
-              <thead><tr><th>日期</th><th>成员</th><th>项目 / 任务</th><th>说明</th><th>工时</th><th /></tr></thead>
+              <thead><tr><th>日期</th><th>工作内容</th><th>成员</th><th>工时</th><th /></tr></thead>
               <tbody>{visibleLogs.map((log) => (
                 <tr key={log.id}>
-                  <td><CalendarDays size={13} /> {log.workDate.slice(0, 10)}</td>
-                  <td><span className="avatar">{log.userName.slice(0, 1)}</span>{log.userName} · {roleLabels[log.userRole]}</td>
-                  <td><small><i style={{ background: log.projectColor }} /> {log.projectCode}</small><b>{log.taskTitle}</b></td>
-                  <td>{log.note || "—"}</td>
-                  <td><strong>{log.durationHours.toFixed(1)}h</strong></td>
+                  <td><span className="work-log-date"><CalendarDays size={14} /> {log.workDate.slice(0, 10)}</span></td>
+                  <td>
+                    <div className="work-log-content">
+                      <span><i style={{ background: log.projectColor }} /> {log.projectCode} · {log.projectName}</span>
+                      <b>{log.taskTitle}</b>
+                      {log.note && <small>{log.note}</small>}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="work-log-member">
+                      <span className="avatar">{log.userName.slice(0, 1)}</span>
+                      <span><b>{log.userName}</b><small>{roleLabels[log.userRole]}</small></span>
+                    </div>
+                  </td>
+                  <td><strong className="work-log-hours">{log.durationHours.toFixed(1)}h</strong></td>
                   <td>{log.canDelete && <button type="button" onClick={() => void deleteLog(log)} aria-label={`删除 ${log.taskTitle} 的工时记录`}><Trash2 size={14} /></button>}</td>
                 </tr>
               ))}</tbody>
