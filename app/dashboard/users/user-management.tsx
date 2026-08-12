@@ -3,7 +3,6 @@
 import {
   AlertCircle,
   Check,
-  ChevronLeft,
   ChevronRight,
   CircleUserRound,
   Clock3,
@@ -31,6 +30,8 @@ import {
 import type { FormEvent } from "react";
 import type { UserRole, UserStatus } from "@/db/schema";
 import { roleLabels, statusLabels } from "@/lib/users";
+import { useDashboardDialog } from "../dashboard-dialog-provider";
+import PaginationControls from "../pagination-controls";
 
 type ManagedUser = {
   id: string;
@@ -179,6 +180,7 @@ export default function UserManagement({
   currentUserId: string;
   currentUserRole: UserRole;
 }) {
+  const { confirm } = useDashboardDialog();
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [stats, setStats] = useState({
@@ -192,6 +194,7 @@ export default function UserManagement({
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -213,7 +216,7 @@ export default function UserManagement({
     setError("");
     const params = new URLSearchParams({
       page: String(page),
-      pageSize: "20",
+      pageSize: String(pageSize),
     });
     if (query.trim()) params.set("query", query.trim());
     if (department) params.set("department", department);
@@ -225,6 +228,15 @@ export default function UserManagement({
       });
       const result = (await response.json()) as UsersResponse;
       if (!response.ok) throw new Error(result.error ?? "用户列表加载失败。");
+
+      const lastPage = Math.max(
+        1,
+        Math.ceil(result.pagination.total / pageSize),
+      );
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
 
       setUsers(result.data);
       setStats(result.stats);
@@ -246,7 +258,7 @@ export default function UserManagement({
     } finally {
       setLoading(false);
     }
-  }, [department, page, query, status]);
+  }, [department, page, pageSize, query, status]);
 
   useEffect(() => {
     const timer = window.setTimeout(loadUsers, query ? 280 : 0);
@@ -263,7 +275,16 @@ export default function UserManagement({
     () => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null,
     [selectedUserId, users],
   );
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  /**
+   * 修改用户列表每页数量并返回第一页。
+   *
+   * @param nextPageSize 新的每页数量。
+   * @return 无返回值。
+   */
+  function changePageSize(nextPageSize: number) {
+    setPageSize(nextPageSize);
+    setPage(1);
+  }
 
   /**
    * 打开新建用户表单。
@@ -375,13 +396,13 @@ export default function UserManagement({
    * @return 删除完成后的 Promise。
    */
   async function deleteUser(user: ManagedUser) {
-    if (
-      !window.confirm(
-        `确定删除“${user.name}”吗？此操作会移除该账号及其登录会话。`,
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "删除用户",
+      message: `确定删除“${user.name}”吗？此操作会移除该账号及其登录会话，且无法撤销。`,
+      confirmLabel: "删除用户",
+      tone: "danger",
+    });
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/users/${user.id}`, {
@@ -422,7 +443,7 @@ export default function UserManagement({
         </div>
         <button className="primary-action" type="button" onClick={openCreate}>
           <Plus size={17} />
-          <span>新增用户</span>
+          <span>新建用户</span>
         </button>
       </section>
 
@@ -664,27 +685,14 @@ export default function UserManagement({
                   </div>
                 )}
               </div>
-              <footer className="table-pagination">
-                <span>第 {page} / {totalPages} 页</span>
-                <div>
-                  <button
-                    type="button"
-                    aria-label="上一页"
-                    disabled={page <= 1}
-                    onClick={() => setPage((value) => Math.max(1, value - 1))}
-                  >
-                    <ChevronLeft size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="下一页"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                  >
-                    <ChevronRight size={15} />
-                  </button>
-                </div>
-              </footer>
+              <PaginationControls
+                page={page}
+                pageSize={pageSize}
+                total={total}
+                itemLabel="位成员"
+                onPageChange={setPage}
+                onPageSizeChange={changePageSize}
+              />
             </div>
 
             {selectedUser && (

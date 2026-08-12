@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserRole } from "@/db/schema";
 import { roleLabels } from "@/lib/users";
+import PaginationControls, { useClientPagination } from "../pagination-controls";
 
 type ReportData = {
   period: number;
@@ -114,6 +115,8 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
     () => data?.statusDistribution.reduce((sum, item) => sum + item.count, 0) ?? 0,
     [data],
   );
+  const projectPagination = useClientPagination(data?.projectDelivery ?? []);
+  const memberPagination = useClientPagination(data?.memberLoad ?? []);
 
   /**
    * 将当前项目交付报表导出为安全 CSV。
@@ -159,7 +162,11 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
           <p>统一观察开发与测试任务完成、项目偏差、成员投入和阶段趋势。</p>
         </div>
         <div className="report-heading-actions">
-          <label className="module-select"><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></label>
+          <label className="module-select"><select value={period} onChange={(event) => {
+            setPeriod(event.target.value);
+            projectPagination.resetPage();
+            memberPagination.resetPage();
+          }}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></label>
           <button className="secondary-action" type="button" onClick={() => void loadReport()} aria-label="刷新报表"><RefreshCw size={15} /></button>
           {canExport && <button className="primary-action module-primary report-export" type="button" onClick={exportCsv} disabled={!data}><Download size={16} /> 导出 CSV</button>}
         </div>
@@ -195,21 +202,41 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
             <article className="module-card project-report-card">
               <header className="module-card-header"><div><span className="eyebrow">项目表现</span><h3>交付与工时偏差</h3></div></header>
               <div className="project-report-list">
-                {data.projectDelivery.map((project) => (
+                {projectPagination.pageItems.map((project) => (
                   <div key={project.id}>
                     <span className="project-mark" style={{ background: project.color }}>{project.code.slice(0, 2)}</span>
                     <div><header><b>{project.name}</b><span>{project.completed}/{project.total} · {project.progress}%</span></header><div className="progress-track"><i style={{ width: `${project.progress}%`, background: project.color }} /></div><footer><span>预估 {project.estimateHours.toFixed(1)}h</span><span>实际 {project.actualHours.toFixed(1)}h</span><span>测试 {project.testingTaskCount}/{project.total}</span><strong className={project.deviation > 10 ? "risk" : ""}>{project.deviation > 0 ? "+" : ""}{project.deviation}%</strong></footer></div>
                   </div>
                 ))}
               </div>
+              {data.projectDelivery.length > 0 && (
+                <PaginationControls
+                  page={projectPagination.page}
+                  pageSize={projectPagination.pageSize}
+                  total={data.projectDelivery.length}
+                  itemLabel="个项目"
+                  onPageChange={projectPagination.setPage}
+                  onPageSizeChange={projectPagination.changePageSize}
+                />
+              )}
             </article>
             <article className="module-card member-report-card">
               <header className="module-card-header"><div><span className="eyebrow">成员负载</span><h3>投入与利用率</h3></div><Users2 size={18} /></header>
               <div className="member-report-list">
-                {data.memberLoad.length ? data.memberLoad.map((member) => (
+                {data.memberLoad.length ? memberPagination.pageItems.map((member) => (
                   <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name} · {roleLabels[member.role]}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${Math.min(100, member.utilization)}%` }} /></div></div><strong className={member.utilization > 100 ? "risk" : ""}>{member.utilization}%</strong></div>
                 )) : <div className="module-empty"><Gauge size={24} /> 当前周期暂无成员工时</div>}
               </div>
+              {data.memberLoad.length > 0 && (
+                <PaginationControls
+                  page={memberPagination.page}
+                  pageSize={memberPagination.pageSize}
+                  total={data.memberLoad.length}
+                  itemLabel="位成员"
+                  onPageChange={memberPagination.setPage}
+                  onPageSizeChange={memberPagination.changePageSize}
+                />
+              )}
             </article>
           </section>
         </>

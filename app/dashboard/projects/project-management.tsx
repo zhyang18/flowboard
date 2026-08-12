@@ -27,6 +27,8 @@ import type { ProjectStatus, UserStatus } from "@/db/schema";
 import { projectStatusLabels } from "@/lib/workspace";
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
+import { useDashboardDialog } from "../dashboard-dialog-provider";
+import PaginationControls, { useClientPagination } from "../pagination-controls";
 import RichTextContent from "../rich-text-content";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
@@ -116,6 +118,7 @@ function displayDate(value: string | null) {
  * @return 项目管理组件。
  */
 export default function ProjectManagement() {
+  const { confirm, prompt } = useDashboardDialog();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [owners, setOwners] = useState<Person[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -187,6 +190,14 @@ export default function ProjectManagement() {
       return matchesQuery && matchesScope && (!status || project.status === status);
     });
   }, [projects, query, scope, status]);
+  const {
+    page,
+    pageSize,
+    pageItems: paginatedProjects,
+    setPage,
+    changePageSize,
+    resetPage,
+  } = useClientPagination(filtered);
 
   const stats = useMemo(
     () => ({
@@ -280,7 +291,13 @@ export default function ProjectManagement() {
    * @return 归档完成后的 Promise。
    */
   async function archiveProject(project: ProjectRecord) {
-    if (!window.confirm(`确定归档项目“${project.name}”吗？任务数据会保留。`)) return;
+    const confirmed = await confirm({
+      title: "归档项目",
+      message: `确定归档项目“${project.name}”吗？项目的任务、迭代和工时数据都会保留。`,
+      confirmLabel: "归档项目",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setError("");
     try {
       const response = await fetch(`/api/projects/${project.id}`, {
@@ -305,9 +322,12 @@ export default function ProjectManagement() {
    * @return 恢复完成后的 Promise。
    */
   async function restoreProject(project: ProjectRecord) {
-    if (!window.confirm(`确定恢复项目“${project.name}”吗？恢复后可以继续维护任务和工时。`)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "恢复项目",
+      message: `确定恢复项目“${project.name}”吗？恢复后可以继续维护任务和工时。`,
+      confirmLabel: "恢复项目",
+    });
+    if (!confirmed) return;
     setError("");
     try {
       const response = await fetch(`/api/projects/${project.id}`, {
@@ -332,17 +352,26 @@ export default function ProjectManagement() {
    * @return 删除完成后的 Promise。
    */
   async function permanentlyDeleteProject(project: ProjectRecord) {
-    const confirmation = window.prompt(
-      `永久删除会清除项目的任务、迭代、成员关系和全部工时，且无法恢复。请输入项目代号 ${project.code} 确认：`,
-    );
+    const confirmation = await prompt({
+      title: "永久删除项目",
+      message: `永久删除会清除项目“${project.name}”的任务、迭代、成员关系和全部工时，且无法恢复。`,
+      inputLabel: `请输入项目代号 ${project.code} 以继续`,
+      placeholder: project.code,
+      confirmLabel: "继续删除",
+      tone: "danger",
+    });
     if (confirmation === null) return;
     if (confirmation.trim() !== project.code) {
       setError("项目代号输入不匹配，永久删除已取消。");
       return;
     }
-    if (!window.confirm(`最后确认：永久删除项目“${project.name}”及其全部业务数据？`)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "最后确认",
+      message: `确定永久删除项目“${project.name}”及其全部业务数据吗？删除后无法恢复。`,
+      confirmLabel: "永久删除",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setError("");
     try {
       const response = await fetch(`/api/projects/${project.id}?permanent=true`, {
@@ -389,7 +418,10 @@ export default function ProjectManagement() {
           <Search size={16} />
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              resetPage();
+            }}
             placeholder="搜索项目名称、代号或负责人"
           />
         </label>
@@ -397,7 +429,10 @@ export default function ProjectManagement() {
           <ListFilter size={15} />
           <select
             value={status}
-            onChange={(event) => setStatus(event.target.value as "" | ProjectStatus)}
+            onChange={(event) => {
+              setStatus(event.target.value as "" | ProjectStatus);
+              resetPage();
+            }}
           >
             <option value="">全部状态</option>
             {Object.entries(projectStatusLabels).map(([value, label]) => (
@@ -409,7 +444,10 @@ export default function ProjectManagement() {
           <Archive size={15} />
           <select
             value={scope}
-            onChange={(event) => setScope(event.target.value as "active" | "archived")}
+            onChange={(event) => {
+              setScope(event.target.value as "active" | "archived");
+              resetPage();
+            }}
           >
             <option value="active">有效项目</option>
             <option value="archived">已归档项目</option>
@@ -433,7 +471,7 @@ export default function ProjectManagement() {
       ) : filtered.length ? (
         viewMode === "card" ? (
           <section className="project-card-grid" aria-label="项目卡片">
-          {filtered.map((project) => {
+          {paginatedProjects.map((project) => {
             const overrun =
               project.estimateHours > 0 &&
               project.actualHours > project.estimateHours;
@@ -519,7 +557,7 @@ export default function ProjectManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((project) => {
+                {paginatedProjects.map((project) => {
                   const overrun =
                     project.estimateHours > 0 &&
                     project.actualHours > project.estimateHours;
@@ -615,6 +653,17 @@ export default function ProjectManagement() {
           <b>没有符合条件的项目</b>
           <span>调整筛选条件，或创建一个新项目。</span>
         </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={filtered.length}
+          itemLabel="个项目"
+          onPageChange={setPage}
+          onPageSizeChange={changePageSize}
+        />
       )}
 
       {modalOpen && (

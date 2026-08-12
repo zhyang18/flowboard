@@ -34,7 +34,9 @@ import {
   taskStatuses,
 } from "@/lib/workspace";
 import AttachmentEditor from "../attachment-editor";
+import { useDashboardDialog } from "../dashboard-dialog-provider";
 import AttachmentViewer from "../attachment-viewer";
+import PaginationControls, { useClientPagination } from "../pagination-controls";
 import RichTextContent from "../rich-text-content";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
@@ -222,6 +224,7 @@ function completedLabel(value: string | null) {
  * @return 任务看板组件。
  */
 export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: string }) {
+  const { confirm } = useDashboardDialog();
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
@@ -332,6 +335,14 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     const overdue = tasks.filter((task) => task.overdue).length;
     return { estimate, actual, overdue };
   }, [tasks]);
+  const {
+    page,
+    pageSize,
+    pageItems: paginatedTasks,
+    setPage,
+    changePageSize,
+    resetPage,
+  } = useClientPagination(tasks);
 
   /**
    * 在可写项目中打开新建任务表单。
@@ -507,7 +518,13 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * @return 删除完成后的 Promise。
    */
   async function deleteTask(task: BoardTask) {
-    if (!window.confirm(`确定删除任务“${task.title}”吗？`)) return;
+    const confirmed = await confirm({
+      title: "删除任务",
+      message: `确定删除任务“${task.title}”吗？此操作无法撤销。`,
+      confirmLabel: "删除任务",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     try {
       const response = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
       const result = (await response.json()) as { error?: string };
@@ -638,13 +655,17 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       <section className="module-toolbar board-toolbar">
         <label className="module-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务标题或描述" />
+          <input value={query} onChange={(event) => {
+            setQuery(event.target.value);
+            resetPage();
+          }} placeholder="搜索任务标题或描述" />
         </label>
         <label className="module-select">
           <span className="select-color" style={{ background: projects.find((project) => project.id === projectId)?.color ?? "#9aa6b2" }} />
           <select value={projectId} onChange={(event) => {
             setProjectId(event.target.value);
             setSprintId("");
+            resetPage();
           }}>
             <option value="">全部项目</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
@@ -653,7 +674,10 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </label>
         <label className="module-select">
           <CalendarRange size={14} />
-          <select value={sprintId} onChange={(event) => setSprintId(event.target.value)}>
+          <select value={sprintId} onChange={(event) => {
+            setSprintId(event.target.value);
+            resetPage();
+          }}>
             <option value="">全部迭代</option>
             <option value="unplanned">未规划</option>
             {sprints
@@ -668,7 +692,10 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </label>
         <label className="module-select">
           <UserRound size={14} />
-          <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+          <select value={assigneeId} onChange={(event) => {
+            setAssigneeId(event.target.value);
+            resetPage();
+          }}>
             <option value="">全部开发负责人</option>
             {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
           </select>
@@ -676,7 +703,10 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </label>
         <label className="module-select">
           <ShieldCheck size={14} />
-          <select value={testerId} onChange={(event) => setTesterId(event.target.value)}>
+          <select value={testerId} onChange={(event) => {
+            setTesterId(event.target.value);
+            resetPage();
+          }}>
             <option value="">全部测试负责人</option>
             {testers.map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
           </select>
@@ -701,8 +731,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         <section className="kanban-scroll" aria-label="任务看板">
           <div className="kanban-board">
             {taskStatuses.map((status) => {
-              const columnTasks = tasks.filter((task) => task.status === status);
-              const columnEstimate = columnTasks.reduce((sum, task) => sum + task.estimateHours, 0);
+              const allColumnTasks = tasks.filter((task) => task.status === status);
+              const columnTasks = paginatedTasks.filter((task) => task.status === status);
+              const columnEstimate = allColumnTasks.reduce((sum, task) => sum + task.estimateHours, 0);
               return (
                 <section
                   className={`kanban-column column-${status} ${dropStatus === status ? "drop-target" : ""}`}
@@ -722,7 +753,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                     <div>
                       <i />
                       <b>{taskStatusLabels[status]}</b>
-                      <span>{columnTasks.length}</span>
+                      <span>{allColumnTasks.length}</span>
                     </div>
                     <small>{columnEstimate.toFixed(1)}h</small>
                   </header>
@@ -835,7 +866,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => {
+              {paginatedTasks.map((task) => {
                 const remaining = task.estimateHours - task.actualHours;
                 const overrun = task.estimateHours > 0 && remaining < 0;
                 const hasActions =
@@ -929,6 +960,17 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </section>
       ) : (
         <div className="module-empty large"><ClipboardList size={30} /><b>没有符合条件的任务</b><span>调整筛选条件，或创建一项新任务。</span></div>
+      )}
+
+      {!loading && tasks.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={tasks.length}
+          itemLabel="项任务"
+          onPageChange={setPage}
+          onPageSizeChange={changePageSize}
+        />
       )}
 
       {modalOpen && (

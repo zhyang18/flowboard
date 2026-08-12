@@ -22,6 +22,8 @@ import {
 } from "react";
 import type { UserRole } from "@/db/schema";
 import { roleLabels } from "@/lib/users";
+import { useDashboardDialog } from "../dashboard-dialog-provider";
+import PaginationControls, { useClientPagination } from "../pagination-controls";
 
 type WorkLogRecord = {
   id: string;
@@ -76,6 +78,7 @@ const initialFrom = initialFromDate.toISOString().slice(0, 10);
  * @return 工时分析组件。
  */
 export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: string }) {
+  const { confirm } = useDashboardDialog();
   const [logs, setLogs] = useState<WorkLogRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -181,6 +184,14 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
         log.userName.toLowerCase().includes(normalized),
     );
   }, [logs, query]);
+  const {
+    page,
+    pageSize,
+    pageItems: paginatedLogs,
+    setPage,
+    changePageSize,
+    resetPage,
+  } = useClientPagination(visibleLogs);
 
   const metrics = useMemo(() => {
     const total = visibleLogs.reduce((sum, log) => sum + log.durationHours, 0);
@@ -211,6 +222,7 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
     return result;
   }, [visibleLogs]);
   const dailyMax = Math.max(8, ...daily.map((item) => item.hours));
+  const projectPagination = useClientPagination(projects);
 
   /**
    * 在当前用户可登记的项目中打开工时表单。
@@ -268,7 +280,13 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
    * @return 删除完成后的 Promise。
    */
   async function deleteLog(log: WorkLogRecord) {
-    if (!window.confirm(`确定删除这条 ${log.durationHours} 小时的记录吗？`)) return;
+    const confirmed = await confirm({
+      title: "删除工时记录",
+      message: `确定删除任务“${log.taskTitle}”的这条 ${log.durationHours} 小时工时记录吗？`,
+      confirmLabel: "删除记录",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     try {
       const response = await fetch(`/api/work-logs/${log.id}`, {
         method: "DELETE",
@@ -307,10 +325,10 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
       </section>
 
       <section className="module-toolbar time-toolbar">
-        <label className="module-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务、说明或成员" /></label>
-        <label className="module-select"><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">全部项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}{project.archived ? "（已归档）" : ""}</option>)}</select></label>
-        <label className="module-select"><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}{user.active ? "" : "（已停用）"}</option>)}</select></label>
-        <label className="date-control"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /><span>至</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        <label className="module-search"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); resetPage(); }} placeholder="搜索任务、说明或成员" /></label>
+        <label className="module-select"><select value={projectId} onChange={(event) => { setProjectId(event.target.value); resetPage(); }}><option value="">全部项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}{project.archived ? "（已归档）" : ""}</option>)}</select></label>
+        <label className="module-select"><select value={userId} onChange={(event) => { setUserId(event.target.value); resetPage(); }}><option value="">全部成员</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {roleLabels[user.role]}{user.active ? "" : "（已停用）"}</option>)}</select></label>
+        <label className="date-control"><input type="date" value={from} onChange={(event) => { setFrom(event.target.value); resetPage(); }} /><span>至</span><input type="date" value={to} onChange={(event) => { setTo(event.target.value); resetPage(); }} /></label>
       </section>
 
       {error && <div className="module-alert">{error}</div>}
@@ -330,7 +348,7 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
         <article className="module-card time-breakdown">
           <header className="module-card-header"><div><span className="eyebrow">项目分布</span><h3>工时去向</h3></div></header>
           <div>
-            {projects.map((project) => {
+            {projectPagination.pageItems.map((project) => {
               const hours = visibleLogs.filter((log) => log.projectId === project.id).reduce((sum, log) => sum + log.durationHours, 0);
               const share = metrics.total ? Math.round((hours / metrics.total) * 100) : 0;
               return (
@@ -341,6 +359,16 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
               );
             })}
           </div>
+          {projects.length > 0 && (
+            <PaginationControls
+              page={projectPagination.page}
+              pageSize={projectPagination.pageSize}
+              total={projects.length}
+              itemLabel="个项目"
+              onPageChange={projectPagination.setPage}
+              onPageSizeChange={projectPagination.changePageSize}
+            />
+          )}
         </article>
       </section>
 
@@ -350,7 +378,7 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
           <div className="work-log-table-wrap">
             <table className="work-log-table">
               <thead><tr><th>日期</th><th>工作内容</th><th>成员</th><th>工时</th><th /></tr></thead>
-              <tbody>{visibleLogs.map((log) => (
+              <tbody>{paginatedLogs.map((log) => (
                 <tr key={log.id}>
                   <td><span className="work-log-date"><CalendarDays size={14} /> {log.workDate.slice(0, 10)}</span></td>
                   <td>
@@ -373,6 +401,16 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
             </table>
           </div>
         ) : <div className="module-empty"><Clock3 size={25} /> 当前筛选范围暂无工时记录</div>}
+        {!loading && visibleLogs.length > 0 && (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={visibleLogs.length}
+            itemLabel="条工时"
+            onPageChange={setPage}
+            onPageSizeChange={changePageSize}
+          />
+        )}
       </section>
 
       {modalOpen && (

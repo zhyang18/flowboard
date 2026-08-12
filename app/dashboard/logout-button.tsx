@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useDashboardDialog } from "./dashboard-dialog-provider";
 
 type LogoutButtonProps = {
   variant?: "icon" | "menu";
@@ -16,6 +17,7 @@ type LogoutButtonProps = {
  */
 export default function LogoutButton({ variant = "icon" }: LogoutButtonProps) {
   const router = useRouter();
+  const { confirm } = useDashboardDialog();
   const [pending, setPending] = useState(false);
 
   /**
@@ -24,7 +26,12 @@ export default function LogoutButton({ variant = "icon" }: LogoutButtonProps) {
    * @return 注销流程完成后的 Promise。
    */
   async function logout() {
-    if (!window.confirm("确定要退出登录吗？")) return;
+    const confirmed = await confirm({
+      title: "退出登录",
+      message: "确定要退出当前账号吗？退出后需要重新登录才能继续使用工作台。",
+      confirmLabel: "退出登录",
+    });
+    if (!confirmed) return;
 
     setPending(true);
     try {

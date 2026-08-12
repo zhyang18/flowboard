@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   const department = searchParams.get("department")?.trim().slice(0, 60) ?? "";
   const status = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize")) || 20));
+  const pageSize = Math.min(500, Math.max(1, Number(searchParams.get("pageSize")) || 10));
   const conditions: SQL[] = [];
   if (query) {
     const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;

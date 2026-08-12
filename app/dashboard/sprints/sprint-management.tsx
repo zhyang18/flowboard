@@ -23,6 +23,8 @@ import {
 } from "react";
 import type { SprintStatus, TaskStatus } from "@/db/schema";
 import { sprintStatusLabels, taskStatusLabels } from "@/lib/workspace";
+import { useDashboardDialog } from "../dashboard-dialog-provider";
+import PaginationControls, { useClientPagination } from "../pagination-controls";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
 
 type SprintTask = {
@@ -117,6 +119,7 @@ function displayDate(value: string) {
  * @return 迭代管理组件。
  */
 export default function SprintManagement() {
+  const { confirm } = useDashboardDialog();
   const [sprints, setSprints] = useState<SprintRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [canCreate, setCanCreate] = useState(false);
@@ -137,6 +140,7 @@ export default function SprintManagement() {
   const [candidateTasks, setCandidateTasks] = useState<CandidateTask[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [planningLoading, setPlanningLoading] = useState(false);
+  const planningTaskPagination = useClientPagination(candidateTasks);
 
   /**
    * 加载可见迭代及项目权限。
@@ -186,6 +190,14 @@ export default function SprintManagement() {
           sprint.projectName.toLowerCase().includes(normalized)),
     );
   }, [query, sprints, status]);
+  const {
+    page,
+    pageSize,
+    pageItems: paginatedSprints,
+    setPage,
+    changePageSize,
+    resetPage,
+  } = useClientPagination(filtered);
 
   const stats = useMemo(
     () => ({
@@ -292,7 +304,15 @@ export default function SprintManagement() {
         : targetStatus === "active" && sprint.status === "completed"
           ? `确定重新打开迭代“${sprint.name}”吗？它会恢复为进行中。`
           : null;
-    if (confirmation && !window.confirm(confirmation)) return;
+    if (confirmation) {
+      const confirmed = await confirm({
+        title: targetStatus === "completed" ? "完成迭代" : "重新打开迭代",
+        message: confirmation,
+        confirmLabel: targetStatus === "completed" ? "完成并锁定" : "重新打开",
+        tone: targetStatus === "completed" ? "danger" : "default",
+      });
+      if (!confirmed) return;
+    }
 
     setTransitioningId(sprint.id);
     setError("");
@@ -331,6 +351,7 @@ export default function SprintManagement() {
    */
   async function openPlanning(sprint: SprintRecord) {
     setPlanningSprint(sprint);
+    planningTaskPagination.resetPage();
     setPlanningLoading(true);
     setError("");
     try {
@@ -394,9 +415,13 @@ export default function SprintManagement() {
    * @return 删除完成后的 Promise。
    */
   async function deleteSprint(sprint: SprintRecord) {
-    if (!window.confirm(`确定删除迭代“${sprint.name}”吗？任务会回到未规划状态。`)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "删除迭代",
+      message: `确定删除迭代“${sprint.name}”吗？迭代中的任务会回到未规划状态。`,
+      confirmLabel: "删除迭代",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     try {
       const response = await fetch(`/api/sprints/${sprint.id}`, {
         method: "DELETE",
@@ -437,10 +462,16 @@ export default function SprintManagement() {
       <section className="module-toolbar">
         <label className="module-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索迭代或项目" />
+          <input value={query} onChange={(event) => {
+            setQuery(event.target.value);
+            resetPage();
+          }} placeholder="搜索迭代或项目" />
         </label>
         <label className="module-select">
-          <select value={status} onChange={(event) => setStatus(event.target.value as "" | SprintStatus)}>
+          <select value={status} onChange={(event) => {
+            setStatus(event.target.value as "" | SprintStatus);
+            resetPage();
+          }}>
             <option value="">全部状态</option>
             {Object.entries(sprintStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
@@ -462,7 +493,7 @@ export default function SprintManagement() {
       ) : filtered.length ? (
         viewMode === "card" ? (
           <section className="sprint-list" aria-label="迭代卡片">
-          {filtered.map((sprint) => {
+          {paginatedSprints.map((sprint) => {
             const capacityUsed = sprint.capacityHours
               ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
               : 0;
@@ -543,7 +574,7 @@ export default function SprintManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((sprint) => {
+                {paginatedSprints.map((sprint) => {
                   const capacityUsed = sprint.capacityHours
                     ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
                     : 0;
@@ -622,6 +653,17 @@ export default function SprintManagement() {
         <div className="module-empty large"><CalendarRange size={30} /><b>没有符合条件的迭代</b><span>创建迭代并规划任务范围。</span></div>
       )}
 
+      {!loading && filtered.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={filtered.length}
+          itemLabel="个迭代"
+          onPageChange={setPage}
+          onPageSizeChange={changePageSize}
+        />
+      )}
+
       {formOpen && (
         <div className="modal-backdrop" role="presentation">
           <section className="workspace-modal" role="dialog" aria-modal="true" aria-labelledby="sprint-form-title">
@@ -656,7 +698,7 @@ export default function SprintManagement() {
               <b>{candidateTasks.filter((task) => selectedTaskIds.includes(task.id)).reduce((sum, task) => sum + task.estimateHours, 0).toFixed(1)}h / {planningSprint.capacityHours.toFixed(1)}h</b>
             </div>
             <div className="planning-task-list">
-              {candidateTasks.map((task) => {
+              {planningTaskPagination.pageItems.map((task) => {
                 const belongsToOtherSprint = Boolean(
                   task.sprintId && task.sprintId !== planningSprint.id,
                 );
@@ -682,6 +724,16 @@ export default function SprintManagement() {
                 );
               })}
             </div>
+            {candidateTasks.length > 0 && (
+              <PaginationControls
+                page={planningTaskPagination.page}
+                pageSize={planningTaskPagination.pageSize}
+                total={candidateTasks.length}
+                itemLabel="项任务"
+                onPageChange={planningTaskPagination.setPage}
+                onPageSizeChange={planningTaskPagination.changePageSize}
+              />
+            )}
             <footer className="planning-footer"><button type="button" onClick={() => setPlanningSprint(null)}>取消</button><button className="primary-action" type="button" disabled={planningLoading} onClick={() => void savePlanning()}>{planningLoading ? "保存中…" : "保存任务范围"}</button></footer>
           </section>
         </div>

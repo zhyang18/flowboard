@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getWorkspaceSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/session";
 import DashboardTopbar from "./dashboard-topbar";
+import DashboardDialogProvider from "./dashboard-dialog-provider";
 import MobileNavigation from "./mobile-navigation";
 import DashboardSidebar from "./sidebar";
 
@@ -23,16 +24,18 @@ export default async function DashboardLayout({
   const settings = await getWorkspaceSettings();
 
   return (
-    <main className="dashboard-shell">
-      <DashboardSidebar
-        user={user}
-        workspaceName={settings?.workspaceName ?? "FlowBoard 研发中心"}
-      />
-      <section className="dashboard-workspace">
-        <DashboardTopbar user={user} />
-        <div className="dashboard-content">{children}</div>
-      </section>
-      <MobileNavigation userRole={user.role} />
-    </main>
+    <DashboardDialogProvider>
+      <main className="dashboard-shell">
+        <DashboardSidebar
+          user={user}
+          workspaceName={settings?.workspaceName ?? "FlowBoard 研发中心"}
+        />
+        <section className="dashboard-workspace">
+          <DashboardTopbar user={user} />
+          <div className="dashboard-content">{children}</div>
+        </section>
+        <MobileNavigation userRole={user.role} />
+      </main>
+    </DashboardDialogProvider>
   );
 }
