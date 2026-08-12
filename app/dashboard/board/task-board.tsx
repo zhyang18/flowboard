@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  ClipboardList,
   Clock3,
   Edit3,
   GripVertical,
@@ -36,6 +37,7 @@ import {
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
 import RichTextContent from "../rich-text-content";
+import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
 
 type BoardTask = {
   id: string;
@@ -178,6 +180,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [testerId, setTesterId] = useState("");
   const [sprintId, setSprintId] = useState("");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -573,13 +576,20 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           </select>
           <ChevronDown size={14} />
         </label>
+        <span className="toolbar-result">显示 {tasks.length} 项任务</span>
+        <ViewModeToggle
+          value={viewMode}
+          onChange={setViewMode}
+          cardLabel="切换为任务看板布局"
+          listLabel="切换为任务列表布局"
+        />
       </section>
 
       {error && <div className="module-alert">{error}</div>}
 
       {loading ? (
         <div className="module-loading">正在加载任务看板…</div>
-      ) : (
+      ) : viewMode === "card" ? (
         <section className="kanban-scroll" aria-label="任务看板">
           <div className="kanban-board">
             {taskStatuses.map((status) => {
@@ -707,6 +717,113 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
             })}
           </div>
         </section>
+      ) : tasks.length ? (
+        <section className="entity-table-shell" aria-label="任务列表">
+          <table className="entity-table task-entity-table">
+            <thead>
+              <tr>
+                <th>任务</th>
+                <th>状态</th>
+                <th>负责人</th>
+                <th>截止 / 完成</th>
+                <th>工时</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((task) => {
+                const remaining = task.estimateHours - task.actualHours;
+                const overrun = task.estimateHours > 0 && remaining < 0;
+                const hasActions =
+                  task.canEdit || task.canReject || task.canDelete || task.canLogWork;
+                return (
+                  <tr
+                    className={initialTaskId === task.id ? "deep-linked" : ""}
+                    id={`task-${task.id}`}
+                    key={task.id}
+                  >
+                    <td>
+                      <div className="task-list-title">
+                        <div>
+                          <span className={`task-priority priority-${task.priority}`}>
+                            {taskPriorityLabels[task.priority]}
+                          </span>
+                          <small className="task-project"><i style={{ background: task.projectColor }} /> {task.projectCode} · {task.projectName}</small>
+                          <small className={`task-sprint ${task.sprintStatus === "completed" ? "completed" : ""}`}>
+                            <CalendarRange size={11} /> {task.sprintName ?? "未规划迭代"}
+                          </small>
+                        </div>
+                        <strong>{task.title}</strong>
+                        {task.description && <RichTextContent value={task.description} />}
+                        {task.attachmentCount > 0 && <AttachmentViewer owner={{ type: "taskId", id: task.id }} />}
+                        {task.latestRejection && (
+                          <span className="entity-rejection"><Undo2 size={11} /> 上次测试未通过 · {task.latestRejection.testerName}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      {task.canEdit ? (
+                        <select
+                          className={`task-status-select status-${task.status}`}
+                          value={task.status}
+                          aria-label={`修改 ${task.title} 的状态`}
+                          onChange={(event) => void updateStatus(task.id, event.target.value as TaskStatus)}
+                        >
+                          {taskStatuses.map((status) => <option value={status} key={status}>{taskStatusLabels[status]}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`task-status status-${task.status}`}>{taskStatusLabels[task.status]}</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="entity-stacked-value">
+                        <span><UserRound size={12} /> 开发：{task.assigneeName ?? "待认领"}</span>
+                        <small><ShieldCheck size={12} /> 测试：{task.testerName ?? "待指派"}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="entity-stacked-value">
+                        <span className={task.overdue ? "risk" : ""}>
+                          {task.overdue ? <CircleAlert size={12} /> : <CalendarClock size={12} />}
+                          {dateLabel(task.dueDate)}
+                        </span>
+                        <small>{task.completedAt ? `完成于 ${completedLabel(task.completedAt)}` : "尚未完成"}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="entity-stacked-value">
+                        <span>预估 / 实际 <b>{task.estimateHours.toFixed(1)} / {task.actualHours.toFixed(1)}h</b></span>
+                        <small className={overrun ? "risk" : ""}>{overrun ? "已超出" : "剩余"} {Math.abs(remaining).toFixed(1)}h</small>
+                      </div>
+                    </td>
+                    <td className="entity-actions-cell">
+                      {hasActions ? (
+                        <div className="entity-actions">
+                          {task.canLogWork && (
+                            <Link href={`/dashboard/time?taskId=${task.id}`}><Clock3 size={14} /> 工时</Link>
+                          )}
+                          {task.canEdit && (
+                            <button type="button" onClick={() => openEdit(task)}><Edit3 size={14} /> 编辑</button>
+                          )}
+                          {task.canReject && (
+                            <button type="button" onClick={() => openReject(task)}><Undo2 size={14} /> 打回</button>
+                          )}
+                          {task.canDelete && (
+                            <button className="danger" type="button" onClick={() => void deleteTask(task)}><Trash2 size={14} /> 删除</button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="entity-no-action">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      ) : (
+        <div className="module-empty large"><ClipboardList size={30} /><b>没有符合条件的任务</b><span>调整筛选条件，或创建一项新任务。</span></div>
       )}
 
       {modalOpen && (

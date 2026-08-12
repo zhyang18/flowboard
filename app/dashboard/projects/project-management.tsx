@@ -28,6 +28,7 @@ import { projectStatusLabels } from "@/lib/workspace";
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
 import RichTextContent from "../rich-text-content";
+import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
 
 type ProjectRecord = {
   id: string;
@@ -122,6 +123,7 @@ export default function ProjectManagement() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | ProjectStatus>("");
   const [scope, setScope] = useState<"active" | "archived">("active");
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -412,6 +414,12 @@ export default function ProjectManagement() {
           </select>
         </label>
         <span className="toolbar-result">显示 {filtered.length} 个项目</span>
+        <ViewModeToggle
+          value={viewMode}
+          onChange={setViewMode}
+          cardLabel="切换为项目卡片布局"
+          listLabel="切换为项目列表布局"
+        />
       </section>
 
       {error && <div className="module-alert">{error}</div>}
@@ -419,7 +427,8 @@ export default function ProjectManagement() {
       {loading ? (
         <div className="module-loading">正在加载项目…</div>
       ) : filtered.length ? (
-        <section className="project-card-grid">
+        viewMode === "card" ? (
+          <section className="project-card-grid" aria-label="项目卡片">
           {filtered.map((project) => {
             const overrun =
               project.estimateHours > 0 &&
@@ -490,7 +499,112 @@ export default function ProjectManagement() {
               </article>
             );
           })}
-        </section>
+          </section>
+        ) : (
+          <section className="entity-table-shell" aria-label="项目列表">
+            <table className="entity-table project-entity-table">
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>状态</th>
+                  <th>负责人 / 截止日期</th>
+                  <th>任务进度</th>
+                  <th>工时</th>
+                  <th>成员</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((project) => {
+                  const overrun =
+                    project.estimateHours > 0 &&
+                    project.actualHours > project.estimateHours;
+                  const hasActions =
+                    (!project.archived && project.canManage) ||
+                    (project.archived &&
+                      (project.canRestore || project.canDeletePermanently));
+                  return (
+                    <tr className={project.archived ? "archived" : ""} key={project.id}>
+                      <td>
+                        <div className="entity-title-cell">
+                          <span className="project-mark" style={{ background: project.color }}>
+                            {project.code.slice(0, 2)}
+                          </span>
+                          <div>
+                            <small>{project.code}</small>
+                            <strong>{project.name}</strong>
+                            {project.attachmentCount > 0 && (
+                              <AttachmentViewer owner={{ type: "projectId", id: project.id }} />
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}>
+                          {project.archived ? "已归档" : projectStatusLabels[project.status]}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="entity-stacked-value">
+                          <strong>{project.ownerName}</strong>
+                          <small><CalendarDays size={12} /> {displayDate(project.dueDate)}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-progress-cell">
+                          <span><small>{project.completedTaskCount}/{project.taskCount}</small><b>{project.progress}%</b></span>
+                          <div className="progress-track">
+                            <i style={{ width: `${project.progress}%`, background: project.color }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-stacked-value">
+                          <span>预估 <b>{project.estimateHours.toFixed(1)}h</b></span>
+                          <span className={overrun ? "risk" : ""}>实际 <b>{project.actualHours.toFixed(1)}h</b></span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-stacked-value">
+                          <span><Users2 size={12} /> {project.memberCount} 位成员</span>
+                          <small>测试 {project.testerCount} · 任务 {project.taskCount}</small>
+                        </div>
+                      </td>
+                      <td className="entity-actions-cell">
+                        {hasActions ? (
+                          <div className="entity-actions">
+                            {!project.archived && project.canManage && (
+                              <>
+                                <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
+                                  <Edit3 size={14} /> 编辑
+                                </button>
+                                <button type="button" onClick={() => void archiveProject(project)} aria-label={`归档 ${project.name}`}>
+                                  <Archive size={14} /> 归档
+                                </button>
+                              </>
+                            )}
+                            {project.archived && project.canRestore && (
+                              <button type="button" onClick={() => void restoreProject(project)} aria-label={`恢复 ${project.name}`}>
+                                <RotateCcw size={14} /> 恢复
+                              </button>
+                            )}
+                            {project.archived && project.canDeletePermanently && (
+                              <button className="danger" type="button" onClick={() => void permanentlyDeleteProject(project)} aria-label={`永久删除 ${project.name}`}>
+                                <Trash2 size={14} /> 删除
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="entity-no-action">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
+        )
       ) : (
         <div className="module-empty large">
           <FolderKanban size={30} />

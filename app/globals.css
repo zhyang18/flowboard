@@ -2860,6 +2860,335 @@ textarea {
   font-size: 11px;
 }
 
+.view-mode-toggle {
+  height: 38px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #f4f7fa;
+}
+
+.view-mode-toggle button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-500);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.view-mode-toggle button:hover {
+  color: var(--blue-700);
+}
+
+.view-mode-toggle button.active {
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(20, 42, 74, 0.12);
+  color: var(--blue-700);
+}
+
+.entity-table-shell {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  scrollbar-color: #c7d0db transparent;
+}
+
+.entity-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--ink-700);
+  font-size: 11px;
+}
+
+.project-entity-table,
+.sprint-entity-table {
+  min-width: 1120px;
+}
+
+.task-entity-table {
+  min-width: 1180px;
+}
+
+.entity-table th {
+  height: 42px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--line);
+  background: #f7f9fc;
+  color: var(--ink-500);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.entity-table td {
+  min-height: 66px;
+  padding: 12px 13px;
+  border-bottom: 1px solid #edf1f5;
+  vertical-align: middle;
+}
+
+.entity-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.entity-table tbody tr:hover td {
+  background: #fbfdff;
+}
+
+.entity-table tbody tr.archived td {
+  background: #fafbfc;
+  color: var(--ink-500);
+}
+
+.project-entity-table th:first-child,
+.project-entity-table td:first-child,
+.sprint-entity-table th:first-child,
+.sprint-entity-table td:first-child {
+  width: 250px;
+}
+
+.task-entity-table th:first-child,
+.task-entity-table td:first-child {
+  width: 370px;
+}
+
+.entity-title-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.entity-title-cell > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.entity-title-cell small,
+.entity-description {
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 10px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-title-cell strong {
+  overflow: hidden;
+  color: var(--ink-900);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-color-dot {
+  width: 9px;
+  height: 42px;
+  flex: 0 0 4px;
+  border-radius: 999px;
+}
+
+.entity-stacked-value {
+  display: grid;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.entity-stacked-value > span,
+.entity-stacked-value > small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.entity-stacked-value small {
+  color: var(--ink-500);
+  font-size: 10px;
+}
+
+.entity-progress-cell {
+  width: 150px;
+  display: grid;
+  gap: 7px;
+}
+
+.entity-progress-cell > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.entity-progress-cell small {
+  color: var(--ink-500);
+  font-size: 10px;
+}
+
+.entity-actions-cell {
+  width: 1%;
+}
+
+.entity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.entity-actions button,
+.entity-actions a {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: #f3f6f9;
+  color: var(--ink-600);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.entity-actions button:hover,
+.entity-actions a:hover {
+  background: var(--blue-50);
+  color: var(--blue-700);
+}
+
+.entity-actions button.danger {
+  color: var(--red-700);
+}
+
+.entity-actions button.danger:hover {
+  background: var(--red-100);
+}
+
+.entity-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.entity-no-action {
+  display: block;
+  color: var(--ink-400);
+  text-align: center;
+}
+
+.entity-table .attachment-viewer {
+  margin-top: 1px;
+}
+
+.entity-table .attachment-viewer a {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-list-title {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.task-list-title > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.task-list-title .task-project,
+.task-list-title .task-sprint {
+  width: auto;
+  margin-top: 0;
+}
+
+.task-list-title > strong {
+  overflow: hidden;
+  color: var(--ink-900);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-list-title > .rich-text-content {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 340px;
+  color: var(--ink-500);
+  font-size: 10px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.task-list-title > .rich-text-content .rich-text-image {
+  display: none;
+}
+
+.entity-rejection {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  color: var(--orange-700);
+  font-size: 9px;
+}
+
+.task-status-select {
+  height: 30px;
+  padding: 0 25px 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  outline: 0;
+  background: #eef2f6;
+  color: var(--ink-600);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.task-status-select.status-in_progress {
+  background: var(--blue-100);
+  color: var(--blue-700);
+}
+
+.task-status-select.status-review {
+  background: var(--violet-100);
+  color: var(--violet-700);
+}
+
+.task-status-select.status-done {
+  background: var(--green-100);
+  color: var(--green-700);
+}
+
+.task-entity-table tr.deep-linked td {
+  background: var(--blue-50);
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--blue-500) 65%, transparent),
+    inset 0 -2px 0 color-mix(in srgb, var(--blue-500) 65%, transparent);
+}
+
 .select-color {
   width: 7px;
   height: 7px;
@@ -5306,6 +5635,10 @@ textarea {
     margin-left: 0;
   }
 
+  .view-mode-toggle {
+    margin-left: auto;
+  }
+
   .board-toolbar .module-select {
     min-width: 0;
     flex: 1;
@@ -5395,6 +5728,15 @@ textarea {
 
   .board-toolbar .module-select {
     flex-basis: 100%;
+  }
+
+  .view-mode-toggle button {
+    width: 32px;
+    padding: 0;
+  }
+
+  .view-mode-toggle button span {
+    display: none;
   }
 
   .date-control {

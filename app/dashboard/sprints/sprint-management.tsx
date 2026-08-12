@@ -23,6 +23,7 @@ import {
 } from "react";
 import type { SprintStatus, TaskStatus } from "@/db/schema";
 import { sprintStatusLabels, taskStatusLabels } from "@/lib/workspace";
+import ViewModeToggle, { type ViewMode } from "../view-mode-toggle";
 
 type SprintTask = {
   id: string;
@@ -121,6 +122,7 @@ export default function SprintManagement() {
   const [canCreate, setCanCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"" | SprintStatus>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -442,13 +444,20 @@ export default function SprintManagement() {
           </select>
         </label>
         <span className="toolbar-result">显示 {filtered.length} 个迭代</span>
+        <ViewModeToggle
+          value={viewMode}
+          onChange={setViewMode}
+          cardLabel="切换为迭代卡片布局"
+          listLabel="切换为迭代列表布局"
+        />
       </section>
 
       {error && <div className="module-alert">{error}</div>}
       {loading ? (
         <div className="module-loading">正在加载迭代…</div>
       ) : filtered.length ? (
-        <section className="sprint-list">
+        viewMode === "card" ? (
+          <section className="sprint-list" aria-label="迭代卡片">
           {filtered.map((sprint) => {
             const capacityUsed = sprint.capacityHours
               ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
@@ -514,7 +523,97 @@ export default function SprintManagement() {
               </article>
             );
           })}
-        </section>
+          </section>
+        ) : (
+          <section className="entity-table-shell" aria-label="迭代列表">
+            <table className="entity-table sprint-entity-table">
+              <thead>
+                <tr>
+                  <th>迭代</th>
+                  <th>状态</th>
+                  <th>周期</th>
+                  <th>任务进度</th>
+                  <th>容量占用</th>
+                  <th>工时 / 测试</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((sprint) => {
+                  const capacityUsed = sprint.capacityHours
+                    ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
+                    : 0;
+                  return (
+                    <tr key={sprint.id}>
+                      <td>
+                        <div className="entity-title-cell">
+                          <i className="entity-color-dot" style={{ background: sprint.projectColor }} />
+                          <div>
+                            <small>{sprint.projectCode} · {sprint.projectName}</small>
+                            <strong>{sprint.name}</strong>
+                            <span className="entity-description">{sprint.goal || "尚未填写本次迭代目标。"}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className={`sprint-status sprint-${sprint.status}`}>{sprintStatusLabels[sprint.status]}</span></td>
+                      <td>
+                        <div className="entity-stacked-value">
+                          <span><CalendarRange size={12} /> {displayDate(sprint.startDate)}</span>
+                          <small>至 {displayDate(sprint.endDate)}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-progress-cell">
+                          <span><small>{sprint.completedTaskCount}/{sprint.taskCount}</small><b>{sprint.progress}%</b></span>
+                          <div className="progress-track"><i style={{ width: `${sprint.progress}%`, background: sprint.projectColor }} /></div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-progress-cell">
+                          <span><small>{sprint.estimateHours.toFixed(1)}/{sprint.capacityHours.toFixed(1)}h</small><b className={capacityUsed > 100 ? "risk" : ""}>{capacityUsed}%</b></span>
+                          <div className="progress-track"><i style={{ width: `${Math.min(100, capacityUsed)}%` }} /></div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="entity-stacked-value">
+                          <span>实际 <b>{sprint.actualHours.toFixed(1)}h</b></span>
+                          <small>测试 {sprint.testedTaskCount}/{sprint.taskCount}</small>
+                        </div>
+                      </td>
+                      <td className="entity-actions-cell">
+                        {sprint.canManage ? (
+                          <div className="entity-actions">
+                            {sprint.status !== "completed" && (
+                              <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划</button>
+                            )}
+                            {sprint.status === "planned" && (
+                              <>
+                                <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><Play size={14} /> 启动</button>
+                                <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                                <button className="danger" type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /> 删除</button>
+                              </>
+                            )}
+                            {sprint.status === "active" && (
+                              <>
+                                <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "completed")}><CheckCircle2 size={14} /> 完成</button>
+                                <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                              </>
+                            )}
+                            {sprint.status === "completed" && (
+                              <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><RotateCcw size={14} /> 重开</button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="entity-no-action">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
+        )
       ) : (
         <div className="module-empty large"><CalendarRange size={30} /><b>没有符合条件的迭代</b><span>创建迭代并规划任务范围。</span></div>
       )}
