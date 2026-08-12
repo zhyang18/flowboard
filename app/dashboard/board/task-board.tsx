@@ -26,7 +26,6 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import Link from "next/link";
 import type { SprintStatus, TaskPriority, TaskStatus, UserRole } from "@/db/schema";
 import {
   sprintStatusLabels,
@@ -106,6 +105,12 @@ type TaskForm = {
   dueDate: string;
 };
 
+type WorkLogForm = {
+  workDate: string;
+  durationHours: number;
+  note: string;
+};
+
 const emptyForm: TaskForm = {
   projectId: "",
   sprintId: "",
@@ -118,6 +123,19 @@ const emptyForm: TaskForm = {
   estimateHours: 4,
   dueDate: "",
 };
+
+/**
+ * 创建任务看板工时登记表单的默认值。
+ *
+ * @return 默认使用今天和一小时投入的工时表单。
+ */
+function createWorkLogForm(): WorkLogForm {
+  return {
+    workDate: new Date().toISOString().slice(0, 10),
+    durationHours: 1,
+    note: "",
+  };
+}
 
 /**
  * 将接口日期转换成日期输入框值。
@@ -197,6 +215,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [rejectionReason, setRejectionReason] = useState("");
   const [rejectionDraftToken, setRejectionDraftToken] = useState("");
   const [rejecting, setRejecting] = useState(false);
+  const [loggingTask, setLoggingTask] = useState<BoardTask | null>(null);
+  const [workLogForm, setWorkLogForm] = useState<WorkLogForm>(createWorkLogForm);
+  const [loggingWork, setLoggingWork] = useState(false);
 
   /**
    * 按当前筛选条件加载任务以及可选的开发和测试负责人。
@@ -503,6 +524,49 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     }
   }
 
+  /**
+   * 在任务看板内打开指定任务的工时登记表单。
+   *
+   * @param task 待登记实际工时的任务。
+   * @return 无返回值。
+   */
+  function openWorkLog(task: BoardTask) {
+    setLoggingTask(task);
+    setWorkLogForm(createWorkLogForm());
+    setError("");
+  }
+
+  /**
+   * 保存任务实际工时并刷新当前看板数据。
+   *
+   * @param event 工时登记表单提交事件。
+   * @return 保存完成后的 Promise。
+   */
+  async function saveWorkLog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!loggingTask) return;
+    setLoggingWork(true);
+    setError("");
+    try {
+      const response = await fetch("/api/work-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: loggingTask.id, ...workLogForm }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "工时登记失败。");
+      setLoggingTask(null);
+      setNotice("工时已登记并同步到任务");
+      await loadTasks();
+    } catch (workLogError) {
+      setError(
+        workLogError instanceof Error ? workLogError.message : "工时登记失败。",
+      );
+    } finally {
+      setLoggingWork(false);
+    }
+  }
+
   const editingTask = tasks.find((task) => task.id === editingId);
   const testerStatusOnly = Boolean(
     editingTask && currentUserRole === "tester" && !editingTask.canManageProject,
@@ -674,12 +738,12 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                             </span>
                           </div>
                           {task.canLogWork && (
-                            <Link className="task-log-work" href={`/dashboard/time?taskId=${task.id}`}>
+                            <button className="task-log-work" type="button" onClick={() => openWorkLog(task)}>
                               <Clock3 size={12} />
                               {task.status === "done" && task.actualHours <= 0
                                 ? "补录实际工时"
                                 : "登记实际工时"}
-                            </Link>
+                            </button>
                           )}
                           <footer>
                             <span className={overdue ? "risk" : ""}>
@@ -804,7 +868,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                       {hasActions ? (
                         <div className="entity-actions">
                           {task.canLogWork && (
-                            <Link href={`/dashboard/time?taskId=${task.id}`}><Clock3 size={14} /> 工时</Link>
+                            <button type="button" onClick={() => openWorkLog(task)}><Clock3 size={14} /> 登记</button>
                           )}
                           {task.canEdit && (
                             <button type="button" onClick={() => openEdit(task)}><Edit3 size={14} /> 编辑</button>
@@ -992,6 +1056,34 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 <button type="button" onClick={() => setRejectingTask(null)}>取消</button>
                 <button className="primary-action" type="submit" disabled={rejecting}>{rejecting ? "提交中…" : "确认打回"}</button>
               </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {loggingTask && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="workspace-modal task-work-log-modal" role="dialog" aria-modal="true" aria-labelledby="task-work-log-title">
+            <header>
+              <div>
+                <span className="eyebrow">{loggingTask.status === "done" && loggingTask.actualHours <= 0 ? "补录工时" : "登记工时"}</span>
+                <h2 id="task-work-log-title">记录实际投入</h2>
+              </div>
+              <button type="button" onClick={() => setLoggingTask(null)} aria-label="关闭"><X size={18} /></button>
+            </header>
+            <form onSubmit={saveWorkLog}>
+              {error && <div className="module-alert">{error}</div>}
+              <div className="workspace-form-grid">
+                <div className="task-work-log-context form-wide">
+                  <span className="project-mark" style={{ background: loggingTask.projectColor }}>{loggingTask.projectCode.slice(0, 2)}</span>
+                  <div><small>{loggingTask.projectCode} · {loggingTask.projectName}</small><b>{loggingTask.title}</b></div>
+                </div>
+                <label><span>工作日期</span><input required type="date" value={workLogForm.workDate} onChange={(event) => setWorkLogForm({ ...workLogForm, workDate: event.target.value })} /></label>
+                <label><span>实际工时（小时）</span><input required type="number" min="0.1" max="24" step="0.1" value={workLogForm.durationHours} onChange={(event) => setWorkLogForm({ ...workLogForm, durationHours: Number(event.target.value) })} /></label>
+                <label className="form-wide"><span>工作说明</span><textarea rows={4} maxLength={500} value={workLogForm.note} onChange={(event) => setWorkLogForm({ ...workLogForm, note: event.target.value })} placeholder="简要说明完成了什么、遇到什么问题。" /></label>
+              </div>
+              <div className="time-form-hint"><UserRound size={15} /><span>实际工时仅允许该任务当前指定的开发负责人本人登记，保存后会自动更新任务实际工时。</span></div>
+              <footer><button type="button" onClick={() => setLoggingTask(null)}>取消</button><button className="primary-action" type="submit" disabled={loggingWork}>{loggingWork ? "保存中…" : "保存工时"}</button></footer>
             </form>
           </section>
         </div>

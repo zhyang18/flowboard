@@ -4256,6 +4256,7 @@ textarea {
 }
 
 .task-log-work {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4266,6 +4267,7 @@ textarea {
   border-radius: 7px;
   background: #f2f7ff;
   color: var(--blue-700);
+  font-family: inherit;
   font-size: 10px;
   font-weight: 700;
   text-decoration: none;
@@ -4345,6 +4347,39 @@ textarea {
   border-color: var(--blue-500);
   background: #fff;
   color: var(--blue-700);
+}
+
+.task-work-log-modal {
+  width: min(620px, 100%);
+}
+
+.task-work-log-context {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7f9fc;
+}
+
+.task-work-log-context > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.task-work-log-context small {
+  color: var(--ink-500);
+  font-size: 10px;
+}
+
+.task-work-log-context b {
+  overflow: hidden;
+  color: var(--ink-900);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-menu-button {
