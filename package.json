@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --test tests/attachments.test.ts tests/notifications.test.ts tests/reporting.test.ts tests/request-security.test.ts tests/roles.test.ts tests/work-logs.test.ts",
+    "test": "tsx --test tests/attachments.test.ts tests/database-usage.test.ts tests/notifications.test.ts tests/reporting.test.ts tests/request-security.test.ts tests/roles.test.ts tests/work-logs.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:preflight": "tsx scripts/preflight-migration.ts",
     "db:migrate": "drizzle-kit migrate",

@@ -29,6 +29,12 @@ type SettingsForm = {
   notifyOverdue: boolean;
 };
 
+type DatabaseCapacity = {
+  used: string;
+  remaining: string;
+  total: string;
+};
+
 const defaultForm: SettingsForm = {
   workspaceName: "FlowBoard 研发中心",
   timezone: "Asia/Singapore",
@@ -40,6 +46,14 @@ const defaultForm: SettingsForm = {
   notifyOverdue: true,
 };
 
+/**
+ * 渲染设置项的布尔开关。
+ *
+ * @param checked 当前是否开启。
+ * @param disabled 当前是否禁止操作。
+ * @param onChange 开关状态变化时的回调。
+ * @return 可访问的开关按钮。
+ */
 function Toggle({
   checked,
   disabled,
@@ -63,6 +77,11 @@ function Toggle({
   );
 }
 
+/**
+ * 渲染工作空间设置与服务状态面板。
+ *
+ * @return 工作空间设置页面内容。
+ */
 export default function SettingsPanel() {
   const router = useRouter();
   const [form, setForm] = useState(defaultForm);
@@ -71,22 +90,32 @@ export default function SettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [databaseCapacity, setDatabaseCapacity] = useState<DatabaseCapacity | null>(null);
 
+  /**
+   * 从服务端加载工作空间设置和数据库使用容量。
+   *
+   * @return 设置加载完成后的 Promise。
+   */
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDatabaseCapacity(null);
     try {
       const response = await fetch("/api/settings", { cache: "no-store" });
       const result = (await response.json()) as {
         data?: SettingsForm;
         canManage?: boolean;
+        databaseCapacity?: DatabaseCapacity;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "设置加载失败。");
       setForm(result.data ?? defaultForm);
       setCanManage(Boolean(result.canManage));
+      setDatabaseCapacity(result.databaseCapacity ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "设置加载失败。");
+      setDatabaseCapacity(null);
     } finally {
       setLoading(false);
     }
@@ -103,6 +132,12 @@ export default function SettingsPanel() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  /**
+   * 校验并提交工作空间设置。
+   *
+   * @param event 设置表单提交事件。
+   * @return 设置保存完成后的 Promise。
+   */
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -170,7 +205,7 @@ export default function SettingsPanel() {
           <section className="module-card settings-status-card">
             <span className="settings-section-icon green"><Database size={19} /></span>
             <div><small>数据持久化</small><b>PostgreSQL 已连接</b><p>项目、任务、迭代、工时和设置均保存在服务端数据库。</p></div>
-            <span className="settings-health"><i /> 运行正常</span>
+            <span className="settings-health"><i /> 运行正常 <span className="settings-database-size" title={databaseCapacity ? `Neon Free 总容量 ${databaseCapacity.total}` : undefined}>{databaseCapacity ? `数据库已用 ${databaseCapacity.used} / 剩余 ${databaseCapacity.remaining}` : loading ? "数据库容量获取中…" : "数据库容量暂不可用"}</span></span>
           </section>
           <section className="module-card settings-status-card">
             <span className="settings-section-icon blue"><BellRing size={19} /></span>

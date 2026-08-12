@@ -1,8 +1,13 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, workspaceSettings } from "@/db/schema";
 import { apiError, canManageUsers, textValue } from "@/lib/api";
+import {
+  formatStorageBytes,
+  NEON_FREE_STORAGE_LIMIT_BYTES,
+  remainingStorageBytes,
+} from "@/lib/database-usage";
 import { defaultWorkspaceSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/session";
 import { hasTrustedOrigin } from "@/lib/request-security";
@@ -20,7 +25,14 @@ export async function GET() {
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
 
-  const [settings] = await getDb().select().from(workspaceSettings).limit(1);
+  const db = getDb();
+  const [[settings], databaseUsageRows] = await Promise.all([
+    db.select().from(workspaceSettings).limit(1),
+    db.execute<{ databaseBytes: string }>(
+      sql`select pg_database_size(current_database())::text as "databaseBytes"`,
+    ),
+  ]);
+  const databaseBytes = Number(databaseUsageRows[0]?.databaseBytes ?? 0);
   return NextResponse.json({
     data: settings
       ? {
@@ -30,6 +42,11 @@ export async function GET() {
         }
       : defaultWorkspaceSettings,
     canManage: canManageUsers(currentUser),
+    databaseCapacity: {
+      used: formatStorageBytes(databaseBytes),
+      remaining: formatStorageBytes(remainingStorageBytes(databaseBytes)),
+      total: formatStorageBytes(NEON_FREE_STORAGE_LIMIT_BYTES),
+    },
   });
 }
 
