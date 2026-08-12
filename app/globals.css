@@ -85,7 +85,7 @@ textarea {
 .eyebrow {
   display: block;
   color: var(--blue-600);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -100,7 +100,7 @@ textarea {
   border-radius: 11px;
   background: linear-gradient(145deg, #dbeaff, #c8dcf8);
   color: var(--blue-700);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -193,13 +193,13 @@ textarea {
 }
 
 .login-brand b {
-  font-size: 18px;
+  font-size: 20px;
   letter-spacing: -0.02em;
 }
 
 .login-brand small {
   color: rgba(221, 235, 249, 0.62);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.08em;
 }
 
@@ -218,14 +218,14 @@ textarea {
   border-radius: 20px;
   background: rgba(54, 142, 239, 0.1);
   color: #a8d2ff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
 }
 
 .showcase-copy h1 {
   max-width: 600px;
   margin: 22px 0 14px;
-  font-size: clamp(42px, 5vw, 68px);
+  font-size: clamp(44px, 5vw, 70px);
   line-height: 1.14;
   letter-spacing: -0.055em;
 }
@@ -234,7 +234,7 @@ textarea {
   max-width: 490px;
   margin: 0;
   color: rgba(224, 236, 249, 0.7);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.85;
 }
 
@@ -256,7 +256,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   color: rgba(227, 239, 252, 0.62);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .showcase-board > header span:first-child {
@@ -311,11 +311,11 @@ textarea {
 .showcase-metrics p {
   margin: 0;
   color: rgba(224, 237, 250, 0.55);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .showcase-metrics b {
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: -0.02em;
 }
 
@@ -352,7 +352,7 @@ textarea {
 
 .showcase-columns small {
   color: rgba(223, 237, 251, 0.62);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .showcase-columns div {
@@ -368,7 +368,7 @@ textarea {
 
 .showcase-columns div b {
   overflow: hidden;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -376,7 +376,7 @@ textarea {
 
 .showcase-columns div span {
   color: #9ecbff;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .showcase-footnote {
@@ -387,7 +387,7 @@ textarea {
   gap: 7px;
   margin: auto 0 0;
   color: rgba(213, 231, 248, 0.52);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .login-panel {
@@ -417,7 +417,7 @@ textarea {
 
 .login-heading h2 {
   margin: 9px 0 9px;
-  font-size: 31px;
+  font-size: 33px;
   line-height: 1.2;
   letter-spacing: -0.04em;
 }
@@ -425,7 +425,7 @@ textarea {
 .login-heading p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.7;
 }
 
@@ -443,7 +443,7 @@ textarea {
 .form-field > span,
 .user-modal form label > span {
   color: var(--ink-700);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -473,7 +473,7 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .input-shell input::placeholder {
@@ -508,7 +508,7 @@ textarea {
   align-items: center;
   gap: 7px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .login-options input,
@@ -522,7 +522,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--blue-600);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -537,7 +537,7 @@ textarea {
   background: linear-gradient(135deg, #167cf0, #075ed8);
   box-shadow: 0 10px 24px rgba(10, 111, 242, 0.22);
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 750;
   transition: transform 140ms ease, box-shadow 140ms ease;
 }
@@ -561,7 +561,7 @@ textarea {
   border-radius: 8px;
   background: #fff5f5;
   color: var(--red-700);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .demo-account {
@@ -574,7 +574,7 @@ textarea {
 
 .demo-account span {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -583,7 +583,7 @@ textarea {
   margin: 5px 0 0;
   color: var(--ink-700);
   font-family: ui-monospace, "Cascadia Code", monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .login-panel > footer {
@@ -591,7 +591,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 /* Dashboard */
@@ -642,12 +642,12 @@ textarea {
 }
 
 .sidebar-brand-copy b {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .sidebar-brand-copy small {
   color: rgba(203, 222, 241, 0.52);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.07em;
 }
 
@@ -683,12 +683,12 @@ textarea {
 
 .workspace-chip small {
   color: rgba(203, 222, 241, 0.45);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .workspace-chip b {
   overflow: hidden;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
 }
 
@@ -700,7 +700,7 @@ textarea {
 .nav-section-label {
   margin: 0 10px 4px;
   color: rgba(194, 215, 237, 0.34);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
@@ -721,7 +721,7 @@ textarea {
   border-radius: 7px;
   background: transparent;
   color: rgba(225, 238, 252, 0.68);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -788,7 +788,7 @@ textarea {
 }
 
 .sidebar-account b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .sidebar-account small {
@@ -796,7 +796,7 @@ textarea {
   align-items: center;
   gap: 3px;
   color: rgba(203, 222, 241, 0.49);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .logout-button {
@@ -863,13 +863,13 @@ textarea {
 
 .topbar-title span {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 650;
 }
 
 .topbar-title h1 {
   margin: 4px 0 0;
-  font-size: 17px;
+  font-size: 19px;
   letter-spacing: -0.02em;
 }
 
@@ -941,12 +941,12 @@ textarea {
 }
 
 .topbar-profile b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .topbar-profile small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .profile-chevron {
@@ -1001,12 +1001,12 @@ textarea {
 }
 
 .popover-heading b {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .popover-heading span {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .popover-heading em {
@@ -1015,7 +1015,7 @@ textarea {
   border-radius: 999px;
   background: #fff1f2;
   color: #d93645;
-  font-size: 9px;
+  font-size: 11px;
   font-style: normal;
   font-weight: 700;
 }
@@ -1082,18 +1082,18 @@ textarea {
 
 .notification-copy > span b {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .notification-copy time {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .notification-copy strong {
   overflow: hidden;
   color: var(--ink-900);
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1101,7 +1101,7 @@ textarea {
 .notification-copy small {
   overflow: hidden;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1114,7 +1114,7 @@ textarea {
   gap: 7px;
   padding: 24px;
   color: var(--ink-500);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -1124,7 +1124,7 @@ textarea {
 
 .popover-state.empty b {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .popover-state.error svg {
@@ -1138,7 +1138,7 @@ textarea {
   border-radius: 7px;
   background: #fff;
   color: var(--blue-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .popover-footer {
@@ -1152,14 +1152,14 @@ textarea {
 
 .popover-footer a {
   color: var(--blue-600);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-decoration: none;
 }
 
 .popover-footer span {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .profile-popover {
@@ -1178,7 +1178,7 @@ textarea {
 .profile-popover-avatar {
   width: 48px;
   height: 48px;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .profile-popover-heading > div {
@@ -1189,14 +1189,14 @@ textarea {
 
 .profile-popover-heading > div b {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .profile-popover-heading > div span {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .profile-popover-heading em {
@@ -1207,7 +1207,7 @@ textarea {
   border-radius: 999px;
   background: #eaf8f1;
   color: #24865c;
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 700;
 }
@@ -1229,14 +1229,14 @@ textarea {
 }
 
 .profile-detail-list i {
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
 }
 
 .profile-detail-list b {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   text-align: right;
   text-overflow: ellipsis;
@@ -1262,7 +1262,7 @@ textarea {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
   text-decoration: none;
 }
@@ -1300,14 +1300,14 @@ textarea {
 
 .user-page-heading h2 {
   margin: 5px 0 5px;
-  font-size: 21px;
+  font-size: 23px;
   letter-spacing: -0.035em;
 }
 
 .user-page-heading p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .primary-action {
@@ -1322,7 +1322,7 @@ textarea {
   background: linear-gradient(135deg, #1680f4, #0862d8);
   box-shadow: 0 7px 16px rgba(10, 111, 242, 0.18);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 
@@ -1383,17 +1383,17 @@ textarea {
 .user-stat-grid small {
   grid-column: 1 / -1;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-stat-grid b {
-  font-size: 23px;
+  font-size: 25px;
   line-height: 1.25;
 }
 
 .user-stat-grid em {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
 }
 
@@ -1414,7 +1414,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1443,7 +1443,7 @@ textarea {
   border-radius: 9px;
   background: #e9edf3;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   text-align: center;
 }
 
@@ -1484,7 +1484,7 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .search-control button {
@@ -1506,7 +1506,7 @@ textarea {
   border-radius: 8px;
   outline: 0;
   background: #fff;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .refresh-button {
@@ -1523,7 +1523,7 @@ textarea {
 .result-count {
   justify-self: end;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -1547,7 +1547,7 @@ textarea {
   border-radius: 8px;
   background: #eef6ff;
   color: var(--ink-700);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .batch-bar button {
@@ -1555,7 +1555,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--blue-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .page-error {
@@ -1567,7 +1567,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--red-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1604,7 +1604,7 @@ textarea {
   border-bottom: 1px solid var(--line);
   background: #f8fafc;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 750;
   text-align: left;
   white-space: nowrap;
@@ -1615,7 +1615,7 @@ textarea {
   padding: 8px 10px;
   border-bottom: 1px solid #edf0f4;
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   vertical-align: middle;
 }
 
@@ -1653,7 +1653,7 @@ textarea {
   height: 32px;
   flex-basis: 32px;
   border-radius: 9px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .user-cell > div,
@@ -1665,18 +1665,18 @@ textarea {
 .user-cell b,
 .team-cell b {
   color: var(--ink-950);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-cell small,
 .team-cell small {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .user-cell em {
   color: var(--ink-400);
-  font-size: 7px;
+  font-size: 9px;
   font-style: normal;
 }
 
@@ -1687,7 +1687,7 @@ textarea {
   gap: 5px;
   padding: 4px 7px;
   border-radius: 6px;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -1752,7 +1752,7 @@ textarea {
 
 .last-seen {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -1814,12 +1814,12 @@ textarea {
 .empty-users b {
   margin-top: 9px;
   color: var(--ink-700);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .empty-users p {
   margin: 5px 0 0;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .table-pagination {
@@ -1830,7 +1830,7 @@ textarea {
   padding: 0 12px;
   border-top: 1px solid var(--line);
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .table-pagination div {
@@ -1874,19 +1874,19 @@ textarea {
   border-radius: 14px;
   background: linear-gradient(145deg, #3c91f5, #0759c8);
   color: #fff;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .user-detail-card h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .user-detail-card header p {
   overflow: hidden;
   margin: 4px 0 0;
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1912,7 +1912,7 @@ textarea {
   border-radius: 7px;
   background: #fff;
   color: var(--ink-700);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 650;
 }
 
@@ -1947,14 +1947,14 @@ textarea {
 
 .user-facts dt {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .user-facts dd {
   overflow: hidden;
   margin: 0;
   color: var(--ink-700);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 650;
   text-align: right;
   text-overflow: ellipsis;
@@ -1973,7 +1973,7 @@ textarea {
 .capacity-panel header {
   display: flex;
   justify-content: space-between;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .capacity-panel header span {
@@ -1999,12 +1999,12 @@ textarea {
 .capacity-panel p {
   margin: 0;
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .recent-activity h4 {
   margin: 0 0 10px;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .recent-activity > div {
@@ -2036,13 +2036,13 @@ textarea {
 }
 
 .recent-activity b {
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .recent-activity small {
   overflow: hidden;
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2059,7 +2059,7 @@ textarea {
   border-radius: 7px;
   background: #fff8f8;
   color: var(--red-700);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 /* Roles */
@@ -2114,19 +2114,19 @@ textarea {
 
 .role-card header b {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .role-card h3 {
   margin: 12px 0 5px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .role-card p {
   min-height: 30px;
   margin: 0;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.55;
 }
 
@@ -2139,7 +2139,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--blue-600);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -2180,7 +2180,7 @@ textarea {
 
 .permission-matrix h3 {
   margin: 5px 0 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .permission-matrix > header > span {
@@ -2188,7 +2188,7 @@ textarea {
   border-radius: 6px;
   background: #eff2f6;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .permission-matrix > div {
@@ -2207,7 +2207,7 @@ textarea {
   padding: 0 14px;
   border-bottom: 1px solid #edf0f4;
   color: var(--ink-700);
-  font-size: 8px;
+  font-size: 10px;
   text-align: center;
 }
 
@@ -2276,7 +2276,7 @@ textarea {
 
 .user-modal h2 {
   margin: 5px 0 0;
-  font-size: 17px;
+  font-size: 19px;
 }
 
 .user-modal > header > button {
@@ -2309,7 +2309,7 @@ textarea {
   border-radius: 7px;
   outline: 0;
   background: #fff;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .user-modal input:focus,
@@ -2324,7 +2324,7 @@ textarea {
   border-radius: 7px;
   background: #f1f6fc;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -2344,7 +2344,7 @@ textarea {
   border-radius: 7px;
   background: #fff;
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -2369,7 +2369,7 @@ textarea {
   background: #f3fffa;
   box-shadow: var(--shadow-md);
   color: var(--green-700);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   animation: toast-in 180ms ease-out;
 }
@@ -2477,7 +2477,7 @@ textarea {
   }
 
   .login-mobile-brand b {
-    font-size: 16px;
+    font-size: 18px;
   }
 
   .login-panel > footer {
@@ -2539,7 +2539,7 @@ textarea {
 
 @media (max-width: 560px) {
   .login-heading h2 {
-    font-size: 27px;
+    font-size: 29px;
   }
 
   .login-mobile-brand {
@@ -2660,14 +2660,14 @@ textarea {
 
 .module-heading h2 {
   margin: 5px 0 6px;
-  font-size: clamp(20px, 2.1vw, 29px);
+  font-size: clamp(22px, 2.1vw, 31px);
   letter-spacing: -0.035em;
 }
 
 .module-heading p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -2684,7 +2684,7 @@ textarea {
   background: var(--blue-600);
   box-shadow: 0 8px 18px rgba(10, 111, 242, 0.2);
   color: #fff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   text-decoration: none;
 }
@@ -2707,7 +2707,7 @@ textarea {
 
 .module-card-header h3 {
   margin: 4px 0 0;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .module-card-header > a {
@@ -2715,7 +2715,7 @@ textarea {
   align-items: center;
   gap: 4px;
   color: var(--blue-600);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-decoration: none;
 }
@@ -2732,7 +2732,7 @@ textarea {
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.68);
   color: var(--ink-500);
-  font-size: 11px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -2742,7 +2742,7 @@ textarea {
 
 .module-empty b {
   color: var(--ink-900);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .module-alert {
@@ -2751,7 +2751,7 @@ textarea {
   border-radius: 8px;
   background: #fff7f8;
   color: var(--red-700);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .metric-icon,
@@ -2842,7 +2842,7 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .module-select {
@@ -2857,7 +2857,7 @@ textarea {
   margin-left: auto;
   padding-right: 5px;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .select-color {
@@ -2898,18 +2898,18 @@ textarea {
 .time-health small,
 .completion-health small {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .workbench-metrics b {
   color: var(--ink-950);
-  font-size: 21px;
+  font-size: 23px;
   line-height: 1.1;
 }
 
 .workbench-metrics b i {
   color: var(--ink-500);
-  font-size: 11px;
+  font-size: 13px;
   font-style: normal;
 }
 
@@ -2919,7 +2919,7 @@ textarea {
   align-items: center;
   gap: 4px;
   color: var(--green-700);
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
 }
 
@@ -2957,7 +2957,7 @@ textarea {
   flex: 0 0 auto;
   border-radius: 10px;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -2986,7 +2986,7 @@ textarea {
 
 .delivery-main b {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2994,12 +2994,12 @@ textarea {
 .delivery-main small,
 .delivery-main footer {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .delivery-main strong {
   color: var(--ink-700);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .delivery-main footer span {
@@ -3013,7 +3013,7 @@ textarea {
   border-radius: 999px;
   background: #f0f3f7;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .focus-row {
@@ -3062,7 +3062,7 @@ textarea {
   align-items: center;
   gap: 5px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .focus-row > div > small i {
@@ -3073,7 +3073,7 @@ textarea {
 
 .focus-row b {
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3082,7 +3082,7 @@ textarea {
   display: flex;
   gap: 12px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .task-status,
@@ -3091,7 +3091,7 @@ textarea {
   border-radius: 999px;
   background: #eef2f6;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -3144,13 +3144,13 @@ textarea {
 
 .time-health b,
 .completion-health b {
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .time-health p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 /* Projects */
@@ -3179,11 +3179,11 @@ textarea {
 
 .project-stat-grid small {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .project-stat-grid b {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .project-card-grid {
@@ -3232,14 +3232,14 @@ textarea {
 
 .project-card > header small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
 .project-card h3 {
   overflow: hidden;
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3250,7 +3250,7 @@ textarea {
   margin: 0;
   padding: 0 16px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.65;
 }
 
@@ -3280,11 +3280,11 @@ textarea {
 .project-owner small,
 .project-owner > span:last-child {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-owner b {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .project-owner > span:last-child {
@@ -3303,7 +3303,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-progress header b {
@@ -3315,7 +3315,7 @@ textarea {
   justify-content: space-between;
   margin: 13px 16px 15px;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-hours span {
@@ -3332,7 +3332,7 @@ textarea {
   padding: 0 16px;
   border-top: 1px solid var(--line);
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-card > footer > span,
@@ -3354,7 +3354,7 @@ textarea {
   border-radius: 6px;
   background: transparent;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-card > footer button:hover {
@@ -3398,7 +3398,7 @@ textarea {
 
 .workspace-modal h2 {
   margin: 5px 0 0;
-  font-size: 17px;
+  font-size: 19px;
 }
 
 .workspace-modal > header > button {
@@ -3430,7 +3430,7 @@ textarea {
 .workspace-form-grid label > span,
 .color-fieldset legend {
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -3442,7 +3442,7 @@ textarea {
   border-radius: 8px;
   outline: 0;
   background: #fff;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .workspace-form-grid input,
@@ -3459,7 +3459,7 @@ textarea {
 
 .workspace-form-grid label > small {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -3503,7 +3503,7 @@ textarea {
 .project-member-fieldset legend {
   margin-bottom: 7px;
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -3537,7 +3537,7 @@ textarea {
 .project-member-picker span {
   min-width: 0;
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3546,13 +3546,13 @@ textarea {
 .project-member-picker small {
   margin-left: auto;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-member-fieldset > p {
   margin: 6px 0 0;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .color-fieldset legend {
@@ -3587,7 +3587,7 @@ textarea {
   border-radius: 8px;
   background: #fff;
   color: var(--ink-700);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -3606,7 +3606,7 @@ textarea {
   border-radius: 8px;
   background: var(--blue-50);
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -3639,11 +3639,11 @@ textarea {
 
 .board-summary small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .board-summary b {
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .board-toolbar .module-search {
@@ -3723,7 +3723,7 @@ textarea {
 }
 
 .kanban-column-header b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .kanban-column-header span {
@@ -3734,12 +3734,12 @@ textarea {
   border-radius: 999px;
   background: #e5eaf0;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .kanban-column-header small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .kanban-task-list {
@@ -3779,7 +3779,7 @@ textarea {
   border-radius: 5px;
   background: #eef2f6;
   color: var(--ink-600);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 800;
 }
 
@@ -3835,7 +3835,7 @@ textarea {
   gap: 5px;
   margin-top: 9px;
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -3855,7 +3855,7 @@ textarea {
   border-radius: 5px;
   background: var(--blue-50);
   color: var(--blue-700);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -3866,7 +3866,7 @@ textarea {
 
 .kanban-task h3 {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -3876,7 +3876,7 @@ textarea {
   overflow: hidden;
   margin: 6px 0 0;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -3899,12 +3899,12 @@ textarea {
 
 .task-time-grid small {
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .task-time-grid b {
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .task-log-work {
@@ -3918,7 +3918,7 @@ textarea {
   border-radius: 7px;
   background: #f2f7ff;
   color: var(--blue-700);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   text-decoration: none;
 }
@@ -3940,7 +3940,7 @@ textarea {
   align-items: center;
   gap: 4px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .task-assignee {
@@ -3951,7 +3951,7 @@ textarea {
   border-radius: 50%;
   background: linear-gradient(145deg, #4a9bfa, #0f66cc);
   color: white;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -3977,7 +3977,7 @@ textarea {
   padding-top: 8px;
   border-top: 1px dashed var(--line);
   color: var(--green-700);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .add-column-task {
@@ -3990,7 +3990,7 @@ textarea {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.48);
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .add-column-task:hover {
@@ -4038,12 +4038,12 @@ textarea {
 .sprint-stat-grid small,
 .time-stat-grid small {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .sprint-stat-grid b,
 .time-stat-grid b {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .sprint-list {
@@ -4082,7 +4082,7 @@ textarea {
   align-items: center;
   gap: 5px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .sprint-card > header small i {
@@ -4093,7 +4093,7 @@ textarea {
 
 .sprint-card h3 {
   margin: 6px 0 0;
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .sprint-status {
@@ -4101,7 +4101,7 @@ textarea {
   border-radius: 999px;
   background: #eef2f6;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -4124,7 +4124,7 @@ textarea {
   min-height: 42px;
   margin: 12px 0 0;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.65;
 }
 
@@ -4134,7 +4134,7 @@ textarea {
   gap: 6px;
   margin-top: 11px;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .sprint-progress-row {
@@ -4153,7 +4153,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .sprint-progress-row header b {
@@ -4177,11 +4177,11 @@ textarea {
 
 .sprint-hours small {
   color: var(--ink-500);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .sprint-hours b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .sprint-card > footer {
@@ -4210,7 +4210,7 @@ textarea {
   border-radius: 7px;
   background: transparent;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -4275,7 +4275,7 @@ textarea {
   background: var(--blue-50);
   color: var(--blue-700);
   cursor: pointer;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -4291,12 +4291,12 @@ textarea {
 .attachment-toolbar > span,
 .attachment-state {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .attachment-error {
   color: var(--red-700);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .attachment-list {
@@ -4319,7 +4319,7 @@ textarea {
 .attachment-list a {
   overflow: hidden;
   color: var(--ink-700);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4327,7 +4327,7 @@ textarea {
 
 .attachment-list small {
   color: var(--ink-400);
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .attachment-list button {
@@ -4352,7 +4352,7 @@ textarea {
 
 .rich-text-preview > small {
   color: var(--ink-400);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 800;
 }
 
@@ -4371,7 +4371,7 @@ textarea {
   border-radius: 5px;
   background: #fff;
   color: var(--blue-700);
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -4384,7 +4384,7 @@ textarea {
   border-radius: 7px;
   background: #fff6f7;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .task-rejection-note > header {
@@ -4421,7 +4421,7 @@ textarea {
   border-radius: 8px;
   background: var(--blue-50);
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .planning-summary b {
@@ -4474,12 +4474,12 @@ textarea {
 }
 
 .planning-task-list b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .planning-task-list small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .planning-footer {
@@ -4519,14 +4519,14 @@ textarea {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .date-control input {
   width: 115px;
   border: 0;
   outline: 0;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .time-grid {
@@ -4583,13 +4583,13 @@ textarea {
 .time-bar-chart b,
 .report-bar-chart b {
   color: var(--ink-700);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .time-bar-chart small,
 .report-bar-chart small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .time-breakdown > div {
@@ -4629,14 +4629,14 @@ textarea {
 
 .time-project-row b {
   overflow: hidden;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .time-project-row header span {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -4660,7 +4660,7 @@ textarea {
   padding: 10px 14px;
   border-bottom: 1px solid #edf1f5;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 10px;
   text-align: left;
 }
 
@@ -4705,12 +4705,12 @@ textarea {
 
 .work-log-table td:nth-child(3) b {
   color: var(--ink-900);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .work-log-table strong {
   color: var(--ink-900);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .work-log-table button {
@@ -4767,23 +4767,23 @@ textarea {
 
 .report-stat-grid small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .report-stat-grid b {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .report-stat-grid b i {
   color: var(--ink-500);
-  font-size: 10px;
+  font-size: 12px;
   font-style: normal;
 }
 
 .report-stat-grid em {
   grid-column: 1 / -1;
   color: var(--green-700);
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
 }
 
@@ -4841,12 +4841,12 @@ textarea {
 }
 
 .status-donut b {
-  font-size: 21px;
+  font-size: 23px;
 }
 
 .status-donut small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .status-legend {
@@ -4859,7 +4859,7 @@ textarea {
   grid-template-columns: 8px 1fr auto auto;
   align-items: center;
   gap: 7px;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .status-legend i {
@@ -4932,14 +4932,14 @@ textarea {
 
 .project-report-list b,
 .member-report-list b {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .project-report-list header span,
 .project-report-list footer,
 .member-report-list header span {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .project-report-list footer strong {
@@ -4959,7 +4959,7 @@ textarea {
 
 .member-report-list > div > strong {
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 /* Settings */
@@ -4973,7 +4973,7 @@ textarea {
   border-radius: 8px;
   background: #f5f9ff;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .settings-layout {
@@ -5025,14 +5025,14 @@ textarea {
 
 .settings-section h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .settings-section p,
 .settings-status-card p {
   margin: 4px 0 0;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -5050,7 +5050,7 @@ textarea {
 
 .settings-fields label > span {
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -5062,7 +5062,7 @@ textarea {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: #fff;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .settings-fields :is(input, select):disabled {
@@ -5087,7 +5087,7 @@ textarea {
   top: 50%;
   right: 11px;
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
   transform: translateY(-50%);
 }
@@ -5111,7 +5111,7 @@ textarea {
 }
 
 .settings-rule b {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .settings-rule p {
@@ -5163,11 +5163,11 @@ textarea {
 
 .settings-status-card small {
   color: var(--ink-500);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .settings-status-card b {
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .settings-health {
@@ -5177,7 +5177,7 @@ textarea {
   padding-top: 10px;
   border-top: 1px solid var(--line);
   color: var(--green-700);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .settings-health i {
@@ -5198,7 +5198,7 @@ textarea {
   background: var(--blue-600);
   box-shadow: 0 8px 18px rgba(10, 111, 242, 0.18);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -5278,7 +5278,7 @@ textarea {
     gap: 3px;
     border-radius: 10px;
     color: var(--ink-500);
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 700;
     text-decoration: none;
   }
@@ -5328,7 +5328,7 @@ textarea {
   }
 
   .module-heading h2 {
-    font-size: 20px;
+    font-size: 22px;
   }
 
   .module-heading p {

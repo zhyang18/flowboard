@@ -226,6 +226,24 @@ export function canAssignTaskAssignee(
 }
 
 /**
+ * 判断当前用户在创建任务时能否选择指定测试负责人。
+ *
+ * @param user 当前登录用户。
+ * @param access 任务所属项目的访问关系。
+ * @param testerId 待指派的测试负责人 ID，null 表示暂不指派。
+ * @return 项目研发成员可指派项目测试人员；测试人员只能指派自己。
+ */
+export function canAssignTaskTester(
+  user: Pick<CurrentUser, "id" | "role">,
+  access: ProjectAccess | null,
+  testerId: string | null,
+): boolean {
+  if (testerId === null) return true;
+  if (!canContributeToProject(user, access)) return false;
+  return user.role !== "tester" || testerId === user.id;
+}
+
+/**
  * 判断当前用户能否验收带测试负责人的任务并将其置为完成。
  *
  * @param user 当前登录用户。

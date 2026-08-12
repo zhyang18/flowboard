@@ -26,6 +26,7 @@ import {
 } from "@/db/schema";
 import {
   canAssignTaskAssignee,
+  canAssignTaskTester,
   canContributeToProject,
   canEditTask,
   canManageProject,
@@ -48,7 +49,10 @@ import {
   safeHours,
   serializeTask,
 } from "@/lib/workspace";
-import { canBackfillCompletedTaskWork } from "@/lib/work-logs";
+import {
+  canBackfillCompletedTaskWork,
+  canRecordTaskWork,
+} from "@/lib/work-logs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -286,14 +290,14 @@ export async function GET(request: Request) {
           !isCompletedSprintStatus(row.sprintStatus),
         canLogWork:
           canContributeToProject(currentUser, access) &&
-          (currentUser.role !== "tester" || row.task.testerId === currentUser.id) &&
+          canRecordTaskWork(currentUser.id, row.task.assigneeId) &&
           (
             !isCompletedSprintStatus(row.sprintStatus) ||
             canBackfillCompletedTaskWork(
               row.sprintStatus,
               row.task.status,
               row.task.actualHours,
-              canManageProject(currentUser, access),
+              canRecordTaskWork(currentUser.id, row.task.assigneeId),
             )
           ),
         canDelete:
@@ -371,15 +375,8 @@ export async function POST(request: Request) {
   if (!canAssignTaskAssignee(currentUser, access, assigneeId)) {
     return apiError("只有项目负责人可以给其他研发成员指派任务。", 403);
   }
-  if (sprintId && !canManageProject(currentUser, access)) {
-    return apiError("只有项目负责人可以将新任务加入迭代。", 403);
-  }
-  if (
-    requestedTesterId &&
-    !canManageProject(currentUser, access) &&
-    requestedTesterId !== currentUser.id
-  ) {
-    return apiError("只有项目负责人可以指派其他测试负责人。", 403);
+  if (!canAssignTaskTester(currentUser, access, requestedTesterId)) {
+    return apiError("测试人员创建任务时只能将自己设为测试负责人。", 403);
   }
   const testerId =
     currentUser.role === "tester" && !canManageProject(currentUser, access)

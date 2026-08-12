@@ -3,6 +3,20 @@ import type { SprintStatus, TaskStatus } from "@/db/schema";
 const HOURS_EPSILON = 0.0001;
 
 /**
+ * 判断当前用户是否是任务指定的开发负责人。
+ *
+ * @param userId 当前登录用户 ID。
+ * @param assigneeId 任务指定的开发负责人 ID。
+ * @return 当前用户是指定开发负责人时返回 true。
+ */
+export function canRecordTaskWork(
+  userId: string,
+  assigneeId: string | null,
+): boolean {
+  return assigneeId !== null && assigneeId === userId;
+}
+
+/**
  * 判断任务是否已经产生可计入交付的实际工时。
  *
  * @param actualHours 任务当前汇总的实际工时。
@@ -34,19 +48,19 @@ export function canDeleteWorkLog(
  * @param sprintStatus 任务所属迭代状态，未规划任务为 null。
  * @param taskStatus 任务当前状态。
  * @param actualHours 任务当前汇总的实际工时。
- * @param managesProject 当前用户是否管理该项目。
- * @return 仅项目管理者处理已完成且零工时的历史任务时返回 true。
+ * @param isAssignedDeveloper 当前用户是否是任务指定开发负责人。
+ * @return 仅指定开发负责人处理已完成且零工时的历史任务时返回 true。
  */
 export function canBackfillCompletedTaskWork(
   sprintStatus: SprintStatus | null,
   taskStatus: TaskStatus,
   actualHours: number,
-  managesProject: boolean,
+  isAssignedDeveloper: boolean,
 ): boolean {
   return (
     sprintStatus === "completed" &&
     taskStatus === "done" &&
     !hasRecordedActualHours(actualHours) &&
-    managesProject
+    isAssignedDeveloper
   );
 }

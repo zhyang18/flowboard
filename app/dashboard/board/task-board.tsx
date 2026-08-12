@@ -760,7 +760,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 <label>
                   <span>所属迭代</span>
                   <select
-                    disabled={testerStatusOnly || !formProject?.canManage}
+                    disabled={Boolean(editingId && !editingTask?.canManageProject)}
                     value={form.sprintId}
                     onChange={(e) => setForm({ ...form, sprintId: e.target.value })}
                   >
@@ -789,7 +789,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 </label>
                 <label>
                   <span>测试负责人</span>
-                  <select disabled={editingId ? !editingTask?.canManageProject : !formProject?.canManage} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
+                  <select disabled={editingId ? !editingTask?.canManageProject : currentUserRole === "tester"} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
                     <option value="">待指派</option>
                     {testers.filter((tester) => tester.projectIds.includes(form.projectId)).map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
                   </select>
@@ -835,7 +835,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
               </div>
               <div className="time-form-hint">
                 <Clock3 size={15} />
-                <span>开发和测试负责人分别参与任务执行与验收；实际工时由“工时分析”中的明细自动汇总，任务完成后记录实际完成时间。</span>
+                <span>开发和测试负责人分别参与任务执行与验收；实际工时仅由指定开发负责人在“工时分析”中登记并自动汇总，任务完成后记录实际完成时间。</span>
               </div>
               <footer>
                 <button type="button" onClick={() => setModalOpen(false)}>取消</button>

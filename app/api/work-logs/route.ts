@@ -23,7 +23,6 @@ import {
 } from "@/db/schema";
 import {
   canContributeToProject,
-  canManageProject,
   getProjectAccess,
   projectVisibilityCondition,
 } from "@/lib/authorization";
@@ -36,7 +35,10 @@ import {
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "@/lib/sprints";
-import { canBackfillCompletedTaskWork } from "@/lib/work-logs";
+import {
+  canBackfillCompletedTaskWork,
+  canRecordTaskWork,
+} from "@/lib/work-logs";
 import { parseDate, safeHours } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -118,6 +120,7 @@ export async function GET(request: Request) {
         durationHours: workLogs.durationHours,
         note: workLogs.note,
         createdAt: workLogs.createdAt,
+        taskAssigneeId: tasks.assigneeId,
         sprintStatus: sprints.status,
       })
       .from(workLogs)
@@ -152,7 +155,7 @@ export async function GET(request: Request) {
             id: tasks.id,
             title: tasks.title,
             projectId: tasks.projectId,
-            testerId: tasks.testerId,
+            assigneeId: tasks.assigneeId,
             status: tasks.status,
             actualHours: tasks.actualHours,
             sprintStatus: sprints.status,
@@ -220,58 +223,46 @@ export async function GET(request: Request) {
     userMap.set(row.userId, value);
   }
 
+  const availableTaskRows = taskRows.filter((task) => {
+    const access = accessMap.get(task.projectId) ?? null;
+    if (!canContributeToProject(currentUser, access)) return false;
+    if (!canRecordTaskWork(currentUser.id, task.assigneeId)) return false;
+    if (!isCompletedSprintStatus(task.sprintStatus)) return true;
+    return canBackfillCompletedTaskWork(
+      task.sprintStatus,
+      task.status,
+      task.actualHours,
+      canRecordTaskWork(currentUser.id, task.assigneeId),
+    );
+  });
+
   return NextResponse.json({
-    data: rows.map(({ sprintStatus, ...row }) => ({
+    data: rows.map(({ sprintStatus, taskAssigneeId, ...row }) => ({
       ...row,
       workDate: row.workDate.toISOString(),
       createdAt: row.createdAt.toISOString(),
       canDelete:
         !isCompletedSprintStatus(sprintStatus) &&
         !accessMap.get(row.projectId)?.archived &&
-        (row.userId === currentUser.id ||
-          canManageProject(currentUser, accessMap.get(row.projectId) ?? null)),
+        row.userId === currentUser.id &&
+        canRecordTaskWork(currentUser.id, taskAssigneeId),
     })),
-    projects: visibleProjectRows.map(({ ownerId, archived, ...project }) => ({
-      ...project,
-      archived,
-      canLog:
-        !archived &&
-        canContributeToProject(currentUser, {
-          projectId: project.id,
-          ownerId,
-          archived,
-          memberRole: membershipMap.get(project.id) ?? null,
-        }),
-      canManage:
-        !archived &&
-        canManageProject(currentUser, {
-          projectId: project.id,
-          ownerId,
-          archived,
-          memberRole: membershipMap.get(project.id) ?? null,
-        }),
+    projects: visibleProjectRows.map((project) => ({
+      id: project.id,
+      name: project.name,
+      code: project.code,
+      color: project.color,
+      archived: project.archived,
+      canLog: availableTaskRows.some((task) => task.projectId === project.id),
     })),
     users: [...userMap.values()],
-    tasks: taskRows
-      .filter((task) => {
-        if (!isCompletedSprintStatus(task.sprintStatus)) return true;
-        return canBackfillCompletedTaskWork(
-          task.sprintStatus,
-          task.status,
-          task.actualHours,
-          canManageProject(currentUser, accessMap.get(task.projectId) ?? null),
-        );
-      })
-      .map((task) => ({
-        id: task.id,
-        title: task.title,
-        projectId: task.projectId,
-        testerId: task.testerId,
-      })),
+    tasks: availableTaskRows.map((task) => ({
+      id: task.id,
+      title: task.title,
+      projectId: task.projectId,
+    })),
     currentUserId: currentUser.id,
-    canCreate: activeProjectRows.some((project) =>
-      canContributeToProject(currentUser, accessMap.get(project.id) ?? null),
-    ),
+    canCreate: availableTaskRows.length > 0,
   });
 }
 
@@ -316,7 +307,7 @@ export async function POST(request: Request) {
     .select({
       id: tasks.id,
       projectId: tasks.projectId,
-      testerId: tasks.testerId,
+      assigneeId: tasks.assigneeId,
       status: tasks.status,
       actualHours: tasks.actualHours,
       archived: projects.archived,
@@ -334,7 +325,7 @@ export async function POST(request: Request) {
     task.sprintStatus,
     task.status,
     task.actualHours,
-    canManageProject(currentUser, access),
+    canRecordTaskWork(currentUser.id, task.assigneeId),
   );
   if (isCompletedSprintStatus(task.sprintStatus) && !repairsMissingCompletedWork) {
     return apiError("已完成迭代为历史快照，请先重新打开后再登记工时。", 409);
@@ -342,12 +333,15 @@ export async function POST(request: Request) {
   if (!canContributeToProject(currentUser, access)) {
     return apiError("无权在该项目中登记工时。", 403);
   }
-  if (requestedUserId !== currentUser.id && !canManageProject(currentUser, access)) {
-    return apiError("只有项目负责人可以代成员登记工时。", 403);
+  if (
+    requestedUserId !== currentUser.id ||
+    !canRecordTaskWork(currentUser.id, task.assigneeId)
+  ) {
+    return apiError("实际工时只能由任务指定开发人员本人登记。", 403);
   }
 
   const [targetUser] = await db
-    .select({ id: users.id, role: users.role })
+    .select({ id: users.id })
     .from(projectMembers)
     .innerJoin(users, eq(projectMembers.userId, users.id))
     .where(
@@ -355,15 +349,12 @@ export async function POST(request: Request) {
         eq(projectMembers.projectId, task.projectId),
         eq(projectMembers.userId, requestedUserId),
         eq(users.status, "active"),
-        sql`${projectMembers.role} <> 'viewer'`,
+        sql`${projectMembers.role} in ('manager', 'member')`,
+        sql`${users.role} not in ('tester', 'viewer')`,
       ),
     )
     .limit(1);
   if (!targetUser) return apiError("工时成员必须是该项目的有效成员。");
-  if (targetUser.role === "tester" && task.testerId !== requestedUserId) {
-    return apiError("测试人员只能在自己负责验收的任务中登记工时。", 403);
-  }
-
   const [dailyTotal] = await db
     .select({ hours: sql<number>`coalesce(sum(${workLogs.durationHours}), 0)` })
     .from(workLogs)
@@ -386,6 +377,7 @@ export async function POST(request: Request) {
       const [lockedTask] = await tx
         .select({
           projectId: tasks.projectId,
+          assigneeId: tasks.assigneeId,
           status: tasks.status,
           actualHours: tasks.actualHours,
           sprintStatus: sprints.status,
@@ -394,14 +386,18 @@ export async function POST(request: Request) {
         .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
         .where(eq(tasks.id, taskId))
         .limit(1);
-      if (!lockedTask || lockedTask.projectId !== task.projectId) {
+      if (
+        !lockedTask ||
+        lockedTask.projectId !== task.projectId ||
+        !canRecordTaskWork(currentUser.id, lockedTask.assigneeId)
+      ) {
         throw new Error("TASK_CHANGED");
       }
       const repairsLockedMissingWork = canBackfillCompletedTaskWork(
         lockedTask.sprintStatus,
         lockedTask.status,
         lockedTask.actualHours,
-        canManageProject(currentUser, access),
+        canRecordTaskWork(currentUser.id, lockedTask.assigneeId),
       );
       if (isCompletedSprintStatus(lockedTask.sprintStatus) && !repairsLockedMissingWork) {
         throw new Error("COMPLETED_SPRINT");

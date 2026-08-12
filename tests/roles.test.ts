@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canApproveTaskCompletion,
   canAssignTaskAssignee,
+  canAssignTaskTester,
   canEditTask,
   canExportReports,
   canManageProject,
@@ -73,6 +74,34 @@ test("普通成员只能给自己认领新任务，项目管理者可指派其�
 
   const owner = { id: "owner-1", role: "member" as const };
   assert.equal(canAssignTaskAssignee(owner, memberAccess, "developer-2"), true);
+});
+
+test("研发成员创建任务时可指派项目测试人员，测试人员只能指派自己", () => {
+  const memberAccess = { ...projectAccess, memberRole: "member" as const };
+  assert.equal(
+    canAssignTaskTester(
+      { id: "developer-1", role: "member" },
+      memberAccess,
+      "tester-1",
+    ),
+    true,
+  );
+  assert.equal(
+    canAssignTaskTester(
+      { id: "tester-1", role: "tester" },
+      projectAccess,
+      "tester-2",
+    ),
+    false,
+  );
+  assert.equal(
+    canAssignTaskTester(
+      { id: "tester-1", role: "tester" },
+      projectAccess,
+      "tester-1",
+    ),
+    true,
+  );
 });
 
 test("带测试负责人的任务只能由测试人员或项目管理者验收完成", () => {

@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, sprints, tasks, workLogs } from "@/db/schema";
-import { canManageProject, getProjectAccess } from "@/lib/authorization";
+import { getProjectAccess } from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
@@ -10,7 +10,7 @@ import {
   isCompletedSprintStatus,
   projectLifecycleLockQueries,
 } from "@/lib/sprints";
-import { canDeleteWorkLog } from "@/lib/work-logs";
+import { canDeleteWorkLog, canRecordTaskWork } from "@/lib/work-logs";
 
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
@@ -36,6 +36,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       userId: workLogs.userId,
       durationHours: workLogs.durationHours,
       projectId: tasks.projectId,
+      taskAssigneeId: tasks.assigneeId,
       taskStatus: tasks.status,
       taskActualHours: tasks.actualHours,
       sprintStatus: sprints.status,
@@ -48,7 +49,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!existing) return apiError("工时记录不存在。", 404);
   const access = await getProjectAccess(currentUser, existing.projectId);
   if (!access || access.archived) return apiError("归档项目的工时历史不能修改。", 409);
-  if (existing.userId !== currentUser.id && !canManageProject(currentUser, access)) {
+  if (
+    existing.userId !== currentUser.id ||
+    !canRecordTaskWork(currentUser.id, existing.taskAssigneeId)
+  ) {
     return apiError("无权删除该工时记录。", 403);
   }
   if (isCompletedSprintStatus(existing.sprintStatus)) {
@@ -67,6 +71,7 @@ export async function DELETE(request: Request, context: RouteContext) {
           userId: workLogs.userId,
           durationHours: workLogs.durationHours,
           projectId: tasks.projectId,
+          taskAssigneeId: tasks.assigneeId,
           taskStatus: tasks.status,
           taskActualHours: tasks.actualHours,
           sprintStatus: sprints.status,
@@ -79,7 +84,9 @@ export async function DELETE(request: Request, context: RouteContext) {
       if (!lockedExisting) throw new Error("WORK_LOG_NOT_FOUND");
       if (
         lockedExisting.projectId !== existing.projectId ||
-        lockedExisting.taskId !== existing.taskId
+        lockedExisting.taskId !== existing.taskId ||
+        lockedExisting.userId !== currentUser.id ||
+        !canRecordTaskWork(currentUser.id, lockedExisting.taskAssigneeId)
       ) {
         throw new Error("WORK_LOG_CHANGED");
       }
