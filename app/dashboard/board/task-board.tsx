@@ -39,7 +39,6 @@ import AttachmentViewer from "../attachment-viewer";
 import PaginationControls, { useClientPagination } from "../pagination-controls";
 import RichTextContent from "../rich-text-content";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
-import TaskComments from "./task-comments";
 
 type BoardTask = {
   id: string;
@@ -113,6 +112,18 @@ type WorkLogForm = {
   workDate: string;
   durationHours: number;
   note: string;
+}
+
+type WorkLogRecord = {
+  id: string;
+  durationHours: number;
+  workDate: string;
+  note: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+  };
 };
 
 /**
@@ -260,6 +271,8 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [loggingTask, setLoggingTask] = useState<BoardTask | null>(null);
   const [workLogForm, setWorkLogForm] = useState<WorkLogForm>(createWorkLogForm);
   const [loggingWork, setLoggingWork] = useState(false);
+  const [workLogs, setWorkLogs] = useState<WorkLogRecord[]>([]);
+  const [loadingWorkLogs, setLoadingWorkLogs] = useState(false);
 
   /**
    * 按当前筛选条件加载任务以及可选的开发和测试负责人。
@@ -582,6 +595,21 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     }
   }
 
+  async function loadWorkLogs(taskId: string) {
+    setLoadingWorkLogs(true);
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/work-logs`);
+      const result = await response.json();
+      if (response.ok) {
+        setWorkLogs(result.data || []);
+      }
+    } catch (e) {
+      console.error("加载历史工时失败", e);
+    } finally {
+      setLoadingWorkLogs(false);
+    }
+  }
+
   /**
    * 在任务看板内打开指定任务的工时登记表单。
    *
@@ -592,6 +620,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     setLoggingTask(task);
     setWorkLogForm(createWorkLogForm());
     setError("");
+    loadWorkLogs(task.id);
   }
 
   /**
@@ -622,6 +651,22 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       );
     } finally {
       setLoggingWork(false);
+    }
+  }
+
+  async function deleteWorkLog(logId: string) {
+    if (!window.confirm("确定要删除这条工时记录吗？对应的任务实际工时也会扣减。")) return;
+    try {
+      const res = await fetch(`/api/work-logs/${logId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "删除失败");
+      }
+      setNotice("工时记录已删除");
+      if (loggingTask) loadWorkLogs(loggingTask.id);
+      await loadTasks();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "删除失败");
     }
   }
 
@@ -1109,7 +1154,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 </button>
               </footer>
             </form>
-            {editingId && <TaskComments taskId={editingId} />}
           </section>
         </div>
       )}
@@ -1166,6 +1210,38 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
               <div className="time-form-hint"><UserRound size={15} /><span>实际工时仅允许该任务当前指定的开发负责人本人登记，保存后会自动更新任务实际工时。</span></div>
               <footer><button type="button" onClick={() => setLoggingTask(null)}>取消</button><button className="primary-action" type="submit" disabled={loggingWork}>{loggingWork ? "保存中…" : "保存工时"}</button></footer>
             </form>
+            <div className="work-logs-history" style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
+              <h3 style={{ fontSize: '14px', marginBottom: '10px' }}>历史记录</h3>
+              {loadingWorkLogs ? (
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>加载中...</div>
+              ) : workLogs.length === 0 ? (
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>暂无工时记录。</div>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {workLogs.map((log) => (
+                    <li key={log.id} style={{ fontSize: '13px', padding: '10px', background: 'var(--bg-subtle)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <div>
+                          <strong>{log.user.name}</strong>
+                          <span style={{ margin: '0 8px', color: 'var(--text-muted)' }}>{log.workDate}</span>
+                          <span style={{ color: 'var(--brand)' }}>{log.durationHours}h</span>
+                        </div>
+                        {log.user.id === currentUserId && (
+                          <button
+                            type="button"
+                            onClick={() => deleteWorkLog(log.id)}
+                            style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', padding: 0 }}
+                          >
+                            删除
+                          </button>
+                        )}
+                      </div>
+                      {log.note && <div style={{ color: 'var(--text-muted)' }}>{log.note}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
         </div>
       )}
