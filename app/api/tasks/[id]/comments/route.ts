@@ -101,11 +101,11 @@ export async function POST(request: Request, context: RouteContext) {
   if (!taskRecord) return apiError("任务不存在。", 404);
   const access = await getProjectAccess(currentUser, taskRecord.projectId);
   if (!access || access.archived) return apiError("任务不存在。", 404);
-  if (currentUser.role === "viewer" || access.role === "viewer") {
+  if (currentUser.role === "viewer" || access.memberRole === "viewer") {
     return apiError("访客无权发表评论。", 403);
   }
 
-  const [comment] = await db.transaction(async (tx) => {
+  const comment = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(taskComments)
       .values({

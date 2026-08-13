@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { MessageSquare, Send } from "lucide-react";
-import { useDashboardDialog } from "../dashboard-dialog-provider";
 
 type Comment = {
   id: string;
@@ -25,7 +24,6 @@ export default function TaskComments({ taskId }: { taskId: string }) {
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { alert } = useDashboardDialog();
 
   useEffect(() => {
     let active = true;
@@ -41,7 +39,7 @@ export default function TaskComments({ taskId }: { taskId: string }) {
         if (active) setComments(json.data);
       } catch (error) {
         if (active) {
-          alert(error instanceof Error ? error.message : "获取评论失败");
+          window.alert(error instanceof Error ? error.message : "获取评论失败");
         }
       } finally {
         if (active) setLoading(false);
@@ -69,7 +67,7 @@ export default function TaskComments({ taskId }: { taskId: string }) {
       setComments((prev) => [...prev, json.data]);
       setContent("");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "发布评论失败");
+      window.alert(error instanceof Error ? error.message : "发布评论失败");
     } finally {
       setSubmitting(false);
     }
