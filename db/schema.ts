@@ -443,6 +443,40 @@ export const workspaceSettings = pgTable("workspace_settings", {
     .defaultNow(),
 });
 
+/**
+ * 任务评论表，用于记录任务详情中的沟通内容和动态
+ */
+export const taskComments = pgTable(
+  "task_comments",
+  {
+    /** 评论记录唯一标识 (主键) */
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** 关联的任务 ID，任务删除时级联删除 */
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    /** 评论作者 ID，即发表该评论的用户，用户被删除时级联删除 */
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** 评论的具体内容（纯文本或富文本） */
+    content: text("content").notNull(),
+    /** 评论创建的时间 */
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** 评论最后更新的时间，后续可能支持编辑评论 */
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_comments_task_idx").on(table.taskId),
+    index("task_comments_author_idx").on(table.authorId),
+    index("task_comments_created_idx").on(table.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -465,3 +499,5 @@ export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
 export type WorkLog = typeof workLogs.$inferSelect;
 export type NewWorkLog = typeof workLogs.$inferInsert;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
+export type TaskComment = typeof taskComments.$inferSelect;
+export type NewTaskComment = typeof taskComments.$inferInsert;

@@ -166,22 +166,20 @@ export default function PaginationControls({
   }
 
   return (
-    <nav className="list-pagination" aria-label={`${itemLabel}列表分页`}>
+    <nav className="list-pagination compact" aria-label={`${itemLabel}列表分页`}>
       <div className="pagination-summary">
-        <span>共 {total} {itemLabel}</span>
-        <label>
-          <span>每页显示</span>
-          <select
-            aria-label="选择每页显示数量"
-            value={customMode ? "custom" : String(pageSize)}
-            onChange={handlePageSizeSelect}
-          >
-            {pageSizeOptions.map((option) => (
-              <option value={option} key={option}>{option}</option>
-            ))}
-            <option value="custom">自定义</option>
-          </select>
-        </label>
+        <span className="pagination-total-label">共 {total} {itemLabel}</span>
+        <select
+          aria-label="选择每页显示数量"
+          title="每页显示数量"
+          value={customMode ? "custom" : String(pageSize)}
+          onChange={handlePageSizeSelect}
+        >
+          {pageSizeOptions.map((option) => (
+            <option value={option} key={option}>{option} / 页</option>
+          ))}
+          <option value="custom">自定义</option>
+        </select>
         {customMode && (
           <form className="pagination-custom-size" onSubmit={applyCustomPageSize}>
             <input
@@ -197,14 +195,13 @@ export default function PaginationControls({
         )}
       </div>
       <div className="pagination-pages">
-        <span>第 {currentPage} / {totalPages} 页</span>
         <button
           type="button"
           aria-label="上一页"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
         >
-          <ChevronLeft size={15} />
+          <ChevronLeft size={14} />
         </button>
         {visiblePages.map((pageNumber) => (
           <button
@@ -224,7 +221,7 @@ export default function PaginationControls({
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
         >
-          <ChevronRight size={15} />
+          <ChevronRight size={14} />
         </button>
       </div>
     </nav>

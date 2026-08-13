@@ -39,6 +39,7 @@ import AttachmentViewer from "../attachment-viewer";
 import PaginationControls, { useClientPagination } from "../pagination-controls";
 import RichTextContent from "../rich-text-content";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
+import TaskComments from "./task-comments";
 
 type BoardTask = {
   id: string;
@@ -1108,6 +1109,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                 </button>
               </footer>
             </form>
+            {editingId && <TaskComments taskId={editingId} />}
           </section>
         </div>
       )}
