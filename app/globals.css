@@ -1871,61 +1871,30 @@ textarea {
   font-size: 11px;
 }
 
-.pagination-summary,
-.pagination-pages,
-.pagination-summary label,
-.pagination-custom-size {
+.pagination-pages {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.pagination-summary > span,
-.pagination-pages > span {
-  white-space: nowrap;
-}
-
-.pagination-summary select,
-.pagination-custom-size input {
-  height: 26px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  outline: 0;
-  background: #fff;
-  color: var(--ink-800);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.pagination-summary select {
-  min-width: 65px;
-  padding: 0 18px 0 6px;
-}
-
-.pagination-custom-size input {
-  width: 55px;
-  padding: 0 6px;
-}
-
-.pagination-custom-size button,
 .pagination-pages button {
-  min-width: 26px;
-  height: 26px;
+  min-width: 24px;
+  height: 24px;
   display: inline-grid;
   place-items: center;
-  padding: 0 6px;
+  padding: 0 4px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
   color: var(--ink-700);
   font-size: 11px;
   font-weight: 600;
+  transition: all 0.1s ease;
 }
 
-.pagination-custom-size button {
-  border-color: var(--blue-100);
-  background: var(--blue-50);
-  color: var(--blue-700);
+.pagination-pages button:hover:not(:disabled) {
+  border-color: var(--ink-300);
+  background: var(--ink-50);
 }
 
 .pagination-pages button.active {
@@ -6418,30 +6387,3 @@ textarea {
   justify-content: flex-end;
 }
 
-/* Compact Pagination */
-.list-pagination.compact {
-  min-height: 44px;
-  padding: 6px 12px;
-  gap: 12px;
-}
-
-.list-pagination.compact .pagination-summary select {
-  height: 28px;
-  padding: 0 24px 0 8px;
-  font-size: 11px;
-}
-
-.list-pagination.compact .pagination-pages button,
-.list-pagination.compact .pagination-custom-size button {
-  height: 28px;
-  min-width: 28px;
-  font-size: 11px;
-}
-
-.list-pagination.compact .pagination-custom-size input {
-  height: 28px;
-}
-
-.list-pagination.compact .pagination-total-label {
-  color: var(--ink-500);
-}
