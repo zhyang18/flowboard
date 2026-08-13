@@ -1210,7 +1210,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
               <div className="time-form-hint"><UserRound size={15} /><span>实际工时仅允许该任务当前指定的开发负责人本人登记，保存后会自动更新任务实际工时。</span></div>
               <footer><button type="button" onClick={() => setLoggingTask(null)}>取消</button><button className="primary-action" type="submit" disabled={loggingWork}>{loggingWork ? "保存中…" : "保存工时"}</button></footer>
             </form>
-            <div className="work-logs-history" style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
+            <div className="work-logs-history" style={{ padding: '0 20px 20px', marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
               <h3 style={{ fontSize: '14px', marginBottom: '10px' }}>历史记录</h3>
               {loadingWorkLogs ? (
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>加载中...</div>
