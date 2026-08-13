@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { getDb } from "@/db";
-import { sessions, users } from "@/db/schema";
+import { roleDefinitions, sessions, users } from "@/db/schema";
 
 export const SESSION_COOKIE = "flowboard_session";
 
@@ -100,6 +100,9 @@ export async function getCurrentUser() {
       name: users.name,
       email: users.email,
       role: users.role,
+      roleDefinitionId: users.roleDefinitionId,
+      roleName: roleDefinitions.name,
+      permissions: roleDefinitions.permissions,
       status: users.status,
       department: users.department,
       team: users.team,
@@ -107,6 +110,7 @@ export async function getCurrentUser() {
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
+    .innerJoin(roleDefinitions, eq(users.roleDefinitionId, roleDefinitions.id))
     .where(
       and(
         eq(sessions.tokenHash, hashSessionToken(token)),

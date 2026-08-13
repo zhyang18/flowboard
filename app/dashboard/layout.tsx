@@ -34,7 +34,9 @@ export default async function DashboardLayout({
           <DashboardTopbar user={user} />
           <div className="dashboard-content">{children}</div>
         </section>
-        <MobileNavigation userRole={user.role} />
+        <MobileNavigation
+          canManageUsers={user.role === "super_admin" || user.permissions.manageUsers}
+        />
       </main>
     </DashboardDialogProvider>
   );

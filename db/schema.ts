@@ -70,6 +70,78 @@ export const projectMemberRoleEnum = pgEnum("project_member_role", [
   "viewer",
 ]);
 
+export const workLogApprovalStatusEnum = pgEnum("work_log_approval_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+
+export type RolePermissions = {
+  manageProjects: boolean;
+  manageUsers: boolean;
+  manageTasks: boolean;
+  approveWorkLogs: boolean;
+  exportReports: boolean;
+  viewAudit: boolean;
+};
+
+export const SYSTEM_ROLE_DEFINITION_IDS = {
+  super_admin: "00000000-0000-4000-8000-000000000001",
+  project_admin: "00000000-0000-4000-8000-000000000002",
+  member: "00000000-0000-4000-8000-000000000003",
+  tester: "00000000-0000-4000-8000-000000000004",
+  viewer: "00000000-0000-4000-8000-000000000005",
+} as const;
+
+export const roleDefinitions = pgTable(
+  "role_definitions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    baseRole: userRoleEnum("base_role").notNull().default("member"),
+    permissions: jsonb("permissions")
+      .$type<RolePermissions>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    tone: text("tone").notNull().default("blue"),
+    isSystem: boolean("is_system").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("role_definitions_code_unique").on(table.code),
+    uniqueIndex("role_definitions_id_base_role_unique").on(
+      table.id,
+      table.baseRole,
+    ),
+    index("role_definitions_system_created_idx").on(
+      table.isSystem,
+      table.createdAt,
+    ),
+    check(
+      "role_definitions_permissions_check",
+      sql`jsonb_typeof(${table.permissions}) = 'object'
+        and ${table.permissions} ?& array['manageProjects', 'manageUsers', 'manageTasks', 'approveWorkLogs', 'exportReports', 'viewAudit']
+        and jsonb_typeof(${table.permissions}->'manageProjects') = 'boolean'
+        and jsonb_typeof(${table.permissions}->'manageUsers') = 'boolean'
+        and jsonb_typeof(${table.permissions}->'manageTasks') = 'boolean'
+        and jsonb_typeof(${table.permissions}->'approveWorkLogs') = 'boolean'
+        and jsonb_typeof(${table.permissions}->'exportReports') = 'boolean'
+        and jsonb_typeof(${table.permissions}->'viewAudit') = 'boolean'`,
+    ),
+    check(
+      "role_definitions_tone_check",
+      sql`${table.tone} in ('violet', 'blue', 'green', 'orange', 'gray')`,
+    ),
+  ],
+);
+
 export const users = pgTable(
   "users",
   {
@@ -80,6 +152,10 @@ export const users = pgTable(
     department: text("department").notNull().default("研发中心"),
     team: text("team").notNull().default("平台研发组"),
     role: userRoleEnum("role").notNull().default("member"),
+    roleDefinitionId: uuid("role_definition_id")
+      .notNull()
+      .default(SYSTEM_ROLE_DEFINITION_IDS.member)
+      .references(() => roleDefinitions.id, { onDelete: "restrict" }),
     status: userStatusEnum("status").notNull().default("invited"),
     passwordHash: text("password_hash"),
     projectCount: integer("project_count").notNull().default(0),
@@ -96,7 +172,13 @@ export const users = pgTable(
     uniqueIndex("users_email_unique").on(table.email),
     index("users_department_idx").on(table.department),
     index("users_status_idx").on(table.status),
+    index("users_role_definition_idx").on(table.roleDefinitionId),
     index("users_created_at_idx").on(table.createdAt),
+    foreignKey({
+      name: "users_role_definition_base_role_fk",
+      columns: [table.roleDefinitionId, table.role],
+      foreignColumns: [roleDefinitions.id, roleDefinitions.baseRole],
+    }).onDelete("restrict"),
   ],
 );
 
@@ -387,6 +469,14 @@ export const workLogs = pgTable(
     workDate: timestamp("work_date", { withTimezone: true }).notNull(),
     durationHours: real("duration_hours").notNull(),
     note: text("note").notNull().default(""),
+    approvalStatus: workLogApprovalStatusEnum("approval_status")
+      .notNull()
+      .default("pending"),
+    approvedBy: uuid("approved_by").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvalComment: text("approval_comment").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -398,6 +488,7 @@ export const workLogs = pgTable(
     index("work_logs_task_idx").on(table.taskId),
     index("work_logs_user_date_idx").on(table.userId, table.workDate),
     index("work_logs_work_date_idx").on(table.workDate),
+    index("work_logs_approval_status_idx").on(table.approvalStatus),
     check(
       "work_logs_duration_hours_check",
       sql`${table.durationHours} > 0 and ${table.durationHours} <= 24`,
@@ -447,6 +538,8 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
+export type RoleDefinition = typeof roleDefinitions.$inferSelect;
+export type NewRoleDefinition = typeof roleDefinitions.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
@@ -462,6 +555,8 @@ export type Attachment = typeof attachments.$inferSelect;
 export type Sprint = typeof sprints.$inferSelect;
 export type NewSprint = typeof sprints.$inferInsert;
 export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
+export type WorkLogApprovalStatus =
+  (typeof workLogApprovalStatusEnum.enumValues)[number];
 export type WorkLog = typeof workLogs.$inferSelect;
 export type NewWorkLog = typeof workLogs.$inferInsert;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;

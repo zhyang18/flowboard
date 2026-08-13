@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   countDistinct,
   desc,
@@ -7,6 +8,7 @@ import {
   gte,
   ilike,
   inArray,
+  lte,
   or,
   sql,
   type SQL,
@@ -17,18 +19,22 @@ import {
   auditLogs,
   projectMembers,
   projects,
+  roleDefinitions,
+  SYSTEM_ROLE_DEFINITION_IDS,
   tasks,
   users,
   workLogs,
 } from "@/db/schema";
 import { canManageUsers } from "@/lib/authorization";
-import { apiError, isUniqueViolation } from "@/lib/api";
+import { apiError, isUniqueViolation, uuidValue } from "@/lib/api";
 import { hashPassword } from "@/lib/password";
-import { countWeekdays, startOfUtcDay } from "@/lib/reporting";
+import { countWeekdays, rollingDateRange } from "@/lib/reporting";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
 import { defaultWorkspaceSettings, getWorkspaceSettings } from "@/lib/settings";
 import {
+  isUserSortKey,
+  isUserRole,
   isUserStatus,
   parseUserInput,
   serializeUser,
@@ -53,6 +59,9 @@ export async function GET(request: Request) {
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
   const department = searchParams.get("department")?.trim().slice(0, 60) ?? "";
   const status = searchParams.get("status") ?? "";
+  const requestedSortBy = searchParams.get("sortBy");
+  const sortBy = isUserSortKey(requestedSortBy) ? requestedSortBy : "createdAt";
+  const sortDirection = searchParams.get("sortDirection") === "asc" ? "asc" : "desc";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = Math.min(500, Math.max(1, Number(searchParams.get("pageSize")) || 10));
   const conditions: SQL[] = [];
@@ -67,7 +76,19 @@ export async function GET(request: Request) {
 
   const where = conditions.length ? and(...conditions) : undefined;
   const db = getDb();
-  const [records, totalResult, statsResult, departmentRows, settings] = await Promise.all([
+  const sortColumns = {
+    name: users.name,
+    department: users.department,
+    role: roleDefinitions.name,
+    status: users.status,
+    lastSeenAt: users.lastSeenAt,
+    createdAt: users.createdAt,
+  } as const;
+  const sortColumn = sortColumns[sortBy];
+  const orderBy = sortDirection === "asc" ? asc(sortColumn) : desc(sortColumn);
+  const workspaceSettings = (await getWorkspaceSettings()) ?? defaultWorkspaceSettings;
+  const { from, to } = rollingDateRange(new Date(), workspaceSettings.timezone, 7);
+  const [records, totalResult, statsResult, departmentRows] = await Promise.all([
     db
       .select({
         id: users.id,
@@ -77,14 +98,17 @@ export async function GET(request: Request) {
         department: users.department,
         team: users.team,
         role: users.role,
+        roleDefinitionId: users.roleDefinitionId,
+        roleName: roleDefinitions.name,
         status: users.status,
         lastSeenAt: users.lastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
       .from(users)
+      .innerJoin(roleDefinitions, eq(users.roleDefinitionId, roleDefinitions.id))
       .where(where)
-      .orderBy(desc(users.createdAt))
+      .orderBy(orderBy, asc(users.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     db.select({ value: count() }).from(users).where(where),
@@ -97,13 +121,9 @@ export async function GET(request: Request) {
       })
       .from(users),
     db.selectDistinct({ department: users.department }).from(users).orderBy(users.department),
-    getWorkspaceSettings(),
   ]);
 
   const userIds = records.map((record) => record.id);
-  const today = startOfUtcDay(new Date());
-  const from = new Date(today);
-  from.setUTCDate(from.getUTCDate() - 6);
   const [projectCounts, recentHours] = userIds.length
     ? await Promise.all([
         db
@@ -128,17 +148,20 @@ export async function GET(request: Request) {
           .from(workLogs)
           .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
           .where(
-            and(inArray(workLogs.userId, userIds), gte(workLogs.workDate, from)),
+              and(
+                inArray(workLogs.userId, userIds),
+                gte(workLogs.workDate, from),
+                lte(workLogs.workDate, to),
+              ),
           )
           .groupBy(workLogs.userId),
       ])
     : [[], []];
   const projectCountMap = new Map(projectCounts.map((item) => [item.userId, Number(item.value)]));
   const hourMap = new Map(recentHours.map((item) => [item.userId, Number(item.hours)]));
-  const workspaceSettings = settings ?? defaultWorkspaceSettings;
   const availableHours = Math.max(
     1,
-    countWeekdays(from, today) * workspaceSettings.workdayHours,
+    countWeekdays(from, to) * workspaceSettings.workdayHours,
   );
 
   return NextResponse.json({
@@ -173,7 +196,18 @@ export async function POST(request: Request) {
   } catch {
     return apiError("请求内容不是有效的 JSON。");
   }
-  const parsed = parseUserInput(body);
+  const requestedRoleDefinitionId =
+    uuidValue(body.roleDefinitionId) ??
+    (isUserRole(body.role) ? SYSTEM_ROLE_DEFINITION_IDS[body.role] : null);
+  if (!requestedRoleDefinitionId) return apiError("请选择用户角色。");
+  const [selectedRole] = await getDb()
+    .select()
+    .from(roleDefinitions)
+    .where(eq(roleDefinitions.id, requestedRoleDefinitionId))
+    .limit(1);
+  if (!selectedRole) return apiError("所选角色不存在。", 404);
+
+  const parsed = parseUserInput({ ...body, role: selectedRole.baseRole });
   if (!parsed.data || parsed.error) return apiError(parsed.error ?? "用户数据无效。");
   const data = parsed.data as UserInput;
   if (currentUser.role !== "super_admin" && ["super_admin", "project_admin"].includes(data.role)) {
@@ -195,6 +229,7 @@ export async function POST(request: Request) {
           department: data.department,
           team: data.team,
           role: data.role,
+          roleDefinitionId: selectedRole.id,
           status: data.status,
           passwordHash,
         })
@@ -209,7 +244,14 @@ export async function POST(request: Request) {
       return user;
     });
     return NextResponse.json(
-      { data: serializeUser({ ...created, projectCount: 0, capacity: 0 }) },
+      {
+        data: serializeUser({
+          ...created,
+          roleName: selectedRole.name,
+          projectCount: 0,
+          capacity: 0,
+        }),
+      },
       { status: 201 },
     );
   } catch (error) {

@@ -91,6 +91,80 @@ async function main(): Promise<void> {
         ) as "taskActualHourMismatches"
     `;
 
+    const [roleSchema] = await sql<
+      Array<{ available: boolean }>
+    >`
+      select
+        to_regclass('public.role_definitions') is not null
+        and exists (
+          select 1
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'users'
+            and column_name = 'role_definition_id'
+        ) as available
+    `;
+    let invalidUserRoleDefinitions = 0;
+    let invalidRolePermissions = 0;
+    let invalidTaskRoleAssignments = 0;
+    if (roleSchema.available) {
+      const [roleSummary] = await sql<
+        Array<{
+          invalidUserRoleDefinitions: number;
+          invalidRolePermissions: number;
+          invalidTaskRoleAssignments: number;
+        }>
+      >`
+        select
+          (
+            select count(*)::int
+            from users
+            left join role_definitions
+              on role_definitions.id = users.role_definition_id
+            where role_definitions.id is null
+              or role_definitions.base_role <> users.role
+          ) as "invalidUserRoleDefinitions",
+          (
+            select count(*)::int
+            from role_definitions
+            where jsonb_typeof(permissions) <> 'object'
+              or not permissions ?& array[
+                'manageProjects',
+                'manageUsers',
+                'manageTasks',
+                'approveWorkLogs',
+                'exportReports',
+                'viewAudit'
+              ]
+              or jsonb_typeof(permissions->'manageProjects') <> 'boolean'
+              or jsonb_typeof(permissions->'manageUsers') <> 'boolean'
+              or jsonb_typeof(permissions->'manageTasks') <> 'boolean'
+              or jsonb_typeof(permissions->'approveWorkLogs') <> 'boolean'
+              or jsonb_typeof(permissions->'exportReports') <> 'boolean'
+              or jsonb_typeof(permissions->'viewAudit') <> 'boolean'
+              or tone not in ('violet', 'blue', 'green', 'orange', 'gray')
+          ) as "invalidRolePermissions",
+          (
+            select count(*)::int
+            from tasks
+            left join users assignees on assignees.id = tasks.assignee_id
+            left join role_definitions assignee_roles
+              on assignee_roles.id = assignees.role_definition_id
+            left join users testers on testers.id = tasks.tester_id
+            left join role_definitions tester_roles
+              on tester_roles.id = testers.role_definition_id
+            where tasks.status <> 'done'
+              and (
+                (tasks.assignee_id is not null and coalesce((assignee_roles.permissions->>'manageTasks')::boolean, false) = false)
+                or (tasks.tester_id is not null and coalesce((tester_roles.permissions->>'manageTasks')::boolean, false) = false)
+              )
+          ) as "invalidTaskRoleAssignments"
+      `;
+      invalidUserRoleDefinitions = roleSummary.invalidUserRoleDefinitions;
+      invalidRolePermissions = roleSummary.invalidRolePermissions;
+      invalidTaskRoleAssignments = roleSummary.invalidTaskRoleAssignments;
+    }
+
     const blockers =
       summary.duplicateSprintGroups +
       summary.duplicateActiveSprintGroups +
@@ -98,13 +172,20 @@ async function main(): Promise<void> {
       summary.invalidTasks +
       summary.invalidWorkLogs +
       summary.invalidProjectOwners +
-      summary.crossProjectSprintTasks;
+      summary.crossProjectSprintTasks +
+      invalidUserRoleDefinitions +
+      invalidRolePermissions +
+      invalidTaskRoleAssignments;
     console.log(
       JSON.stringify(
         {
           migrationReady: blockers === 0,
           blockers,
           ...summary,
+          roleSchemaAvailable: roleSchema.available,
+          invalidUserRoleDefinitions,
+          invalidRolePermissions,
+          invalidTaskRoleAssignments,
           note:
             summary.taskActualHourMismatches > 0
               ? "迁移会按工时明细自动校准任务实际工时。"

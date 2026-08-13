@@ -2,6 +2,11 @@ import type { Attachment } from "@/db/schema";
 
 export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 export const MAX_ATTACHMENT_NAME_LENGTH = 180;
+export const MAX_DRAFT_ATTACHMENTS_PER_TOKEN = 10;
+export const MAX_DRAFT_BYTES_PER_TOKEN = 24 * 1024 * 1024;
+export const MAX_PENDING_DRAFT_ATTACHMENTS_PER_USER = 20;
+export const MAX_PENDING_DRAFT_BYTES_PER_USER = 48 * 1024 * 1024;
+export const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMBEDDABLE_IMAGE_TYPES = new Set([
@@ -40,6 +45,34 @@ export function safeAttachmentName(value: string): string {
  */
 export function isEmbeddableImage(mimeType: string): boolean {
   return EMBEDDABLE_IMAGE_TYPES.has(mimeType.toLowerCase());
+}
+
+/**
+ * 校验新文件是否仍处于草稿令牌和用户级待提交额度内。
+ *
+ * @param usage 当前令牌、当前用户和待上传文件的用量。
+ * @return 超出额度时返回错误说明，允许上传时返回 null。
+ */
+export function draftAttachmentLimitError(usage: {
+  tokenCount: number;
+  tokenBytes: number;
+  userCount: number;
+  userBytes: number;
+  incomingBytes: number;
+}): string | null {
+  if (usage.tokenCount >= MAX_DRAFT_ATTACHMENTS_PER_TOKEN) {
+    return `单次编辑最多保留 ${MAX_DRAFT_ATTACHMENTS_PER_TOKEN} 个待提交附件。`;
+  }
+  if (usage.tokenBytes + usage.incomingBytes > MAX_DRAFT_BYTES_PER_TOKEN) {
+    return "单次编辑的待提交附件总量不能超过 24 MB。";
+  }
+  if (usage.userCount >= MAX_PENDING_DRAFT_ATTACHMENTS_PER_USER) {
+    return `每位用户最多保留 ${MAX_PENDING_DRAFT_ATTACHMENTS_PER_USER} 个待提交附件。`;
+  }
+  if (usage.userBytes + usage.incomingBytes > MAX_PENDING_DRAFT_BYTES_PER_USER) {
+    return "每位用户的待提交附件总量不能超过 48 MB。";
+  }
+  return null;
 }
 
 /**

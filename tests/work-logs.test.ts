@@ -24,6 +24,11 @@ test("已完成任务不能删除最后一条工时明细", () => {
   assert.equal(canDeleteWorkLog("in_progress", 2, 2), true);
 });
 
+test("已通过审核的工时不能由登记人直接删除", () => {
+  assert.equal(canDeleteWorkLog("in_progress", 4, 2, "approved"), false);
+  assert.equal(canDeleteWorkLog("in_progress", 4, 2, "rejected"), true);
+});
+
 test("指定开发人员可以为旧的已完成零工时任务补录一次工时", () => {
   assert.equal(canBackfillCompletedTaskWork("completed", "done", 0, true), true);
   assert.equal(canBackfillCompletedTaskWork("completed", "done", 2, true), false);

@@ -9,6 +9,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import {
@@ -22,6 +23,7 @@ import {
   type UserRole,
 } from "@/db/schema";
 import {
+  canApproveWorkLogs,
   canContributeToProject,
   getProjectAccess,
   projectVisibilityCondition,
@@ -37,12 +39,15 @@ import {
 } from "@/lib/sprints";
 import {
   canBackfillCompletedTaskWork,
+  canDeleteWorkLog,
   canRecordTaskWork,
 } from "@/lib/work-logs";
 import { parseDate, safeHours } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const approvalUsers = alias(users, "approval_users");
 
 /**
  * 返回某一天的 UTC 结束时间，用于与日期输入保持一致。
@@ -119,14 +124,21 @@ export async function GET(request: Request) {
         workDate: workLogs.workDate,
         durationHours: workLogs.durationHours,
         note: workLogs.note,
+        approvalStatus: workLogs.approvalStatus,
+        approvedAt: workLogs.approvedAt,
+        approvalComment: workLogs.approvalComment,
+        approvedByName: approvalUsers.name,
         createdAt: workLogs.createdAt,
         taskAssigneeId: tasks.assigneeId,
+        taskStatus: tasks.status,
+        taskActualHours: tasks.actualHours,
         sprintStatus: sprints.status,
       })
       .from(workLogs)
       .innerJoin(tasks, eq(workLogs.taskId, tasks.id))
       .innerJoin(projects, eq(tasks.projectId, projects.id))
       .innerJoin(users, eq(workLogs.userId, users.id))
+      .leftJoin(approvalUsers, eq(workLogs.approvedBy, approvalUsers.id))
       .leftJoin(sprints, eq(tasks.sprintId, sprints.id))
       .where(and(...conditions))
       .orderBy(desc(workLogs.workDate), desc(workLogs.createdAt)),
@@ -237,15 +249,25 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
-    data: rows.map(({ sprintStatus, taskAssigneeId, ...row }) => ({
+    data: rows.map(({ sprintStatus, taskAssigneeId, taskStatus, taskActualHours, ...row }) => ({
       ...row,
       workDate: row.workDate.toISOString(),
       createdAt: row.createdAt.toISOString(),
+      approvedAt: row.approvedAt?.toISOString() ?? null,
       canDelete:
         !isCompletedSprintStatus(sprintStatus) &&
         !accessMap.get(row.projectId)?.archived &&
         row.userId === currentUser.id &&
-        canRecordTaskWork(currentUser.id, taskAssigneeId),
+        canRecordTaskWork(currentUser.id, taskAssigneeId) &&
+        canDeleteWorkLog(
+          taskStatus,
+          taskActualHours,
+          row.durationHours,
+          row.approvalStatus,
+        ),
+      canApprove:
+        row.userId !== currentUser.id &&
+        canApproveWorkLogs(currentUser, accessMap.get(row.projectId) ?? null),
     })),
     projects: visibleProjectRows.map((project) => ({
       id: project.id,

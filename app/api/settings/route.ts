@@ -2,7 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { auditLogs, workspaceSettings } from "@/db/schema";
-import { apiError, canManageUsers, textValue } from "@/lib/api";
+import { canManageUsers } from "@/lib/authorization";
+import { apiError, textValue } from "@/lib/api";
 import {
   formatStorageBytes,
   NEON_FREE_STORAGE_LIMIT_BYTES,

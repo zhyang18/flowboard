@@ -1,6 +1,27 @@
 import type { ProjectMemberRole, UserRole, UserStatus } from "@/db/schema";
 import { normalizeEmail, textValue } from "./api";
 
+export const userSortKeys = [
+  "name",
+  "department",
+  "role",
+  "status",
+  "lastSeenAt",
+  "createdAt",
+] as const;
+
+export type UserSortKey = (typeof userSortKeys)[number];
+
+/**
+ * 判断未知值是否为受支持的用户排序字段。
+ *
+ * @param value 待校验的查询参数。
+ * @return 属于用户排序字段时返回 true。
+ */
+export function isUserSortKey(value: unknown): value is UserSortKey {
+  return userSortKeys.includes(value as UserSortKey);
+}
+
 export const USER_ROLES: UserRole[] = [
   "super_admin",
   "project_admin",
@@ -174,6 +195,8 @@ export function serializeUser(user: {
   department: string;
   team: string;
   role: UserRole;
+  roleDefinitionId?: string;
+  roleName?: string;
   status: UserStatus;
   projectCount: number;
   capacity: number;

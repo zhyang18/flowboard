@@ -19,18 +19,21 @@ import {
   auditLogs,
   projectMembers,
   projects,
+  roleDefinitions,
   sprints,
   taskRejections,
   tasks,
   users,
 } from "@/db/schema";
 import {
+  canBeTaskDeveloper,
+  canBeTaskTester,
   canAssignTaskAssignee,
   canAssignTaskTester,
   canChangeTaskStatus,
   canContributeToProject,
   canEditTask,
-  canManageProject,
+  canManageTasksInProject,
   getProjectAccess,
   projectVisibilityCondition,
 } from "@/lib/authorization";
@@ -143,11 +146,16 @@ export async function GET(request: Request) {
             projectId: projectMembers.projectId,
             userId: users.id,
             name: users.name,
-            role: projectMembers.role,
-            userRole: users.role,
-          })
-          .from(projectMembers)
-          .innerJoin(users, eq(projectMembers.userId, users.id))
+             role: projectMembers.role,
+             userRole: users.role,
+             permissions: roleDefinitions.permissions,
+           })
+           .from(projectMembers)
+           .innerJoin(users, eq(projectMembers.userId, users.id))
+           .innerJoin(
+             roleDefinitions,
+             eq(users.roleDefinitionId, roleDefinitions.id),
+           )
           .where(
             and(
               inArray(projectMembers.projectId, projectIds),
@@ -235,8 +243,10 @@ export async function GET(request: Request) {
   for (const member of memberRows) {
     if (
       (member.role === "member" || member.role === "manager") &&
-      member.userRole !== "tester" &&
-      member.userRole !== "viewer"
+      canBeTaskDeveloper({
+        role: member.userRole,
+        permissions: member.permissions,
+      })
     ) {
       const value = assigneeMap.get(member.userId) ?? {
         id: member.userId,
@@ -246,7 +256,13 @@ export async function GET(request: Request) {
       value.projectIds.push(member.projectId);
       assigneeMap.set(member.userId, value);
     }
-    if (member.role === "tester" && member.userRole === "tester") {
+    if (
+      member.role === "tester" &&
+      canBeTaskTester({
+        role: member.userRole,
+        permissions: member.permissions,
+      })
+    ) {
       const value = testerMap.get(member.userId) ?? {
         id: member.userId,
         name: member.name,
@@ -286,11 +302,12 @@ export async function GET(request: Request) {
         canChangeStatus:
           !isCompletedSprintStatus(row.sprintStatus) &&
           canChangeTaskStatus(currentUser, access, row.task),
-        canManageProject: canManageProject(currentUser, access),
+        canManageProject: canManageTasksInProject(currentUser, access),
         canReject:
           row.task.status === "review" &&
           row.task.testerId === currentUser.id &&
           currentUser.role === "tester" &&
+          canContributeToProject(currentUser, access) &&
           !isCompletedSprintStatus(row.sprintStatus),
         canLogWork:
           canContributeToProject(currentUser, access) &&
@@ -306,7 +323,7 @@ export async function GET(request: Request) {
           ),
         canDelete:
           !isCompletedSprintStatus(row.sprintStatus) &&
-          (canManageProject(currentUser, access) || row.task.reporterId === currentUser.id),
+          canEditTask(currentUser, access, row.task),
       };
     }),
     projects: projectRows.map(({ ownerId, archived, ...project }) => ({
@@ -317,7 +334,7 @@ export async function GET(request: Request) {
         archived,
         memberRole: membershipMap.get(project.id) ?? null,
       }),
-      canManage: canManageProject(currentUser, {
+      canManage: canManageTasksInProject(currentUser, {
         projectId: project.id,
         ownerId,
         archived,
@@ -383,7 +400,7 @@ export async function POST(request: Request) {
     return apiError("测试人员创建任务时只能将自己设为测试负责人。", 403);
   }
   const testerId =
-    currentUser.role === "tester" && !canManageProject(currentUser, access)
+    currentUser.role === "tester" && !canManageTasksInProject(currentUser, access)
       ? currentUser.id
       : requestedTesterId;
   if (status === "done") {
@@ -398,38 +415,65 @@ export async function POST(request: Request) {
   const db = getDb();
   if (assigneeId) {
     const [assignee] = await db
-      .select({ id: users.id })
+      .select({
+        id: users.id,
+        role: users.role,
+        permissions: roleDefinitions.permissions,
+      })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
+      .innerJoin(
+        roleDefinitions,
+        eq(users.roleDefinitionId, roleDefinitions.id),
+      )
       .where(
         and(
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, assigneeId),
           eq(users.status, "active"),
           sql`${projectMembers.role} in ('manager', 'member')`,
-          sql`${users.role} not in ('tester', 'viewer')`,
         ),
       )
       .limit(1);
-    if (!assignee) return apiError("任务负责人必须是该项目的有效成员。");
+    if (
+      !assignee ||
+      !canBeTaskDeveloper({
+        role: assignee.role,
+        permissions: assignee.permissions,
+      })
+    ) {
+      return apiError("任务负责人必须是该项目中具备任务权限的有效研发成员。");
+    }
   }
 
   if (testerId) {
     const [tester] = await db
-      .select({ id: users.id })
+      .select({
+        id: users.id,
+        role: users.role,
+        permissions: roleDefinitions.permissions,
+      })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
+      .innerJoin(
+        roleDefinitions,
+        eq(users.roleDefinitionId, roleDefinitions.id),
+      )
       .where(
         and(
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, testerId),
           eq(projectMembers.role, "tester"),
-          eq(users.role, "tester"),
           eq(users.status, "active"),
         ),
       )
       .limit(1);
-    if (!tester) return apiError("测试负责人必须是该项目的有效测试人员。");
+    if (
+      !tester ||
+      !canBeTaskTester({ role: tester.role, permissions: tester.permissions })
+    ) {
+      return apiError("测试负责人必须是该项目中具备任务权限的有效测试人员。");
+    }
   }
 
   if (sprintId) {

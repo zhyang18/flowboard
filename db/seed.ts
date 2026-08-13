@@ -4,6 +4,8 @@ import { getDb } from "./index";
 import {
   projects,
   projectMembers,
+  roleDefinitions,
+  SYSTEM_ROLE_DEFINITION_IDS,
   sprints,
   tasks,
   users,
@@ -11,6 +13,7 @@ import {
   workspaceSettings,
 } from "./schema";
 import { hashPassword } from "../lib/password";
+import { systemRoleDefinitions } from "../lib/roles";
 
 loadEnvConfig(process.cwd());
 
@@ -122,6 +125,11 @@ async function seed() {
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin@123456";
   const adminPasswordHash = await hashPassword(adminPassword);
 
+  await db
+    .insert(roleDefinitions)
+    .values(systemRoleDefinitions)
+    .onConflictDoNothing({ target: roleDefinitions.code });
+
   const selectedSeedUsers = seedDemoData ? seedUsers : seedUsers.slice(0, 1);
   for (const [index, user] of selectedSeedUsers.entries()) {
     const [existing] = await db
@@ -134,6 +142,7 @@ async function seed() {
 
     await db.insert(users).values({
       ...user,
+      roleDefinitionId: SYSTEM_ROLE_DEFINITION_IDS[user.role],
       passwordHash: index === 0 ? adminPasswordHash : null,
       lastSeenAt: index < 5 ? new Date(Date.now() - index * 25 * 60 * 1000) : null,
     });

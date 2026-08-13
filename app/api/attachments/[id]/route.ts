@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { attachments, taskRejections, tasks } from "@/db/schema";
-import { canEditTask, canManageProject, getProjectAccess } from "@/lib/authorization";
+import {
+  canEditTask,
+  canManageProject,
+  canManageTasksInProject,
+  getProjectAccess,
+} from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
@@ -47,7 +52,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   const access = projectId ? await getProjectAccess(currentUser, projectId) : null;
   const canDelete = attachment.draftToken
     ? attachment.uploadedBy === currentUser.id
-    : canManageProject(currentUser, access) ||
+    : (attachment.projectId
+        ? canManageProject(currentUser, access)
+        : canManageTasksInProject(currentUser, access)) ||
       Boolean(editableTask && canEditTask(currentUser, access, editableTask));
   if (!canDelete) return apiError("无权删除该附件。", 403);
 

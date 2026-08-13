@@ -1,14 +1,17 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { attachments, taskRejections, tasks } from "@/db/schema";
 import { getProjectAccess } from "@/lib/authorization";
 import {
   attachmentDraftToken,
+  DRAFT_ATTACHMENT_TTL_MS,
+  draftAttachmentLimitError,
   MAX_ATTACHMENT_BYTES,
   safeAttachmentName,
   serializeAttachment,
 } from "@/lib/attachments";
+import { canUploadAttachmentDraft } from "@/lib/authorization";
 import { apiError } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
 import { getCurrentUser } from "@/lib/session";
@@ -94,6 +97,9 @@ export async function POST(request: Request) {
   if (!hasTrustedOrigin(request)) return apiError("请求来源无效。", 403);
   const currentUser = await getCurrentUser();
   if (!currentUser) return apiError("请先登录。", 401);
+  if (!canUploadAttachmentDraft(currentUser)) {
+    return apiError("当前角色无权上传附件。", 403);
+  }
 
   let formData: FormData;
   try {
@@ -107,22 +113,84 @@ export async function POST(request: Request) {
   if (file.size <= 0) return apiError("不能上传空文件。");
   if (file.size > MAX_ATTACHMENT_BYTES) return apiError("单个附件不能超过 4 MB。", 413);
 
-  const [attachment] = await getDb()
-    .insert(attachments)
-    .values({
-      fileName: safeAttachmentName(file.name),
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      content: Buffer.from(await file.arrayBuffer()),
-      draftToken,
-      uploadedBy: currentUser.id,
-    })
-    .returning({
-      id: attachments.id,
-      fileName: attachments.fileName,
-      mimeType: attachments.mimeType,
-      sizeBytes: attachments.sizeBytes,
-      createdAt: attachments.createdAt,
+  const content = Buffer.from(await file.arrayBuffer());
+  const attachment = await getDb().transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`attachment-draft:${currentUser.id}`}))`,
+    );
+    await tx
+      .delete(attachments)
+      .where(
+        and(
+          eq(attachments.uploadedBy, currentUser.id),
+          isNotNull(attachments.draftToken),
+          lt(
+            attachments.createdAt,
+            new Date(Date.now() - DRAFT_ATTACHMENT_TTL_MS),
+          ),
+        ),
+      );
+    const [[tokenUsage], [userUsage]] = await Promise.all([
+      tx
+        .select({
+          count: count(),
+          bytes: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)`,
+        })
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.draftToken, draftToken),
+            eq(attachments.uploadedBy, currentUser.id),
+          ),
+        ),
+      tx
+        .select({
+          count: count(),
+          bytes: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)`,
+        })
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.uploadedBy, currentUser.id),
+            isNotNull(attachments.draftToken),
+          ),
+        ),
+    ]);
+    const limitError = draftAttachmentLimitError({
+      tokenCount: Number(tokenUsage?.count ?? 0),
+      tokenBytes: Number(tokenUsage?.bytes ?? 0),
+      userCount: Number(userUsage?.count ?? 0),
+      userBytes: Number(userUsage?.bytes ?? 0),
+      incomingBytes: file.size,
     });
+    if (limitError) throw new Error(`ATTACHMENT_LIMIT:${limitError}`);
+
+    const [created] = await tx
+      .insert(attachments)
+      .values({
+        fileName: safeAttachmentName(file.name),
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        content,
+        draftToken,
+        uploadedBy: currentUser.id,
+      })
+      .returning({
+        id: attachments.id,
+        fileName: attachments.fileName,
+        mimeType: attachments.mimeType,
+        sizeBytes: attachments.sizeBytes,
+        createdAt: attachments.createdAt,
+      });
+    return created;
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message.startsWith("ATTACHMENT_LIMIT:")) {
+      return error;
+    }
+    throw error;
+  });
+  if (attachment instanceof Error) {
+    return apiError(attachment.message.slice("ATTACHMENT_LIMIT:".length), 409);
+  }
   return NextResponse.json({ data: serializeAttachment(attachment) }, { status: 201 });
 }
