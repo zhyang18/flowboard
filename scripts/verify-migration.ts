@@ -4,7 +4,7 @@ import postgres from "postgres";
 loadEnvConfig(process.cwd());
 
 /**
- * 只读验证角色、项目成员、工时汇总和数据库约束是否已正确上线。
+ * 只读验证项目成员、工时汇总和数据库约束是否已正确上线。
  *
  * @return 验证完成后的 Promise；发现缺失对象或关联异常时抛出错误。
  */
@@ -22,23 +22,13 @@ async function main(): Promise<void> {
     const [summary] = await sql<
       Array<{
         projectMembersTable: boolean;
-        roleDefinitionsTable: boolean;
         loginRateLimitsTable: boolean;
         testerColumn: boolean;
         testerRoleValues: number;
         requiredConstraints: number;
-        requiredRoleConstraints: number;
-        requiredRoleIndexes: number;
-        workLogApprovalColumns: number;
-        requiredWorkLogApprovalConstraints: number;
-        requiredWorkLogApprovalIndexes: number;
         requiredSprintIndexes: number;
         collaborationTables: number;
         activeUserCount: number;
-        roleDefinitionCount: number;
-        invalidUserRoleDefinitions: number;
-        invalidRolePermissions: number;
-        invalidTaskRoleAssignments: number;
         projectMemberCount: number;
         activeProjectCount: number;
         sprintCount: number;
@@ -58,7 +48,6 @@ async function main(): Promise<void> {
     >`
       select
         to_regclass('public.project_members') is not null as "projectMembersTable",
-        to_regclass('public.role_definitions') is not null as "roleDefinitionsTable",
         to_regclass('public.login_rate_limits') is not null as "loginRateLimitsTable",
         exists (
           select 1
@@ -90,44 +79,6 @@ async function main(): Promise<void> {
         ) as "requiredConstraints",
         (
           select count(*)::int
-          from pg_constraint
-          where conname in (
-            'users_role_definition_base_role_fk',
-            'role_definitions_permissions_check',
-            'role_definitions_tone_check'
-          )
-        ) as "requiredRoleConstraints",
-        (
-          select count(*)::int
-          from pg_indexes
-          where schemaname = 'public'
-            and indexname = 'role_definitions_id_base_role_unique'
-        ) as "requiredRoleIndexes",
-        (
-          select count(*)::int
-          from information_schema.columns
-          where table_schema = 'public'
-            and table_name = 'work_logs'
-            and column_name in (
-              'approval_status',
-              'approved_by',
-              'approved_at',
-              'approval_comment'
-            )
-        ) as "workLogApprovalColumns",
-        (
-          select count(*)::int
-          from pg_constraint
-          where conname = 'work_logs_approved_by_users_id_fk'
-        ) as "requiredWorkLogApprovalConstraints",
-        (
-          select count(*)::int
-          from pg_indexes
-          where schemaname = 'public'
-            and indexname = 'work_logs_approval_status_idx'
-        ) as "requiredWorkLogApprovalIndexes",
-        (
-          select count(*)::int
           from pg_indexes
           where schemaname = 'public'
             and indexname in (
@@ -144,48 +95,6 @@ async function main(): Promise<void> {
             and pg_class.relname in ('attachments', 'notifications', 'task_rejections')
         ) as "collaborationTables",
         (select count(*)::int from users where status = 'active') as "activeUserCount",
-        (select count(*)::int from role_definitions) as "roleDefinitionCount",
-        (
-          select count(*)::int
-          from users
-          left join role_definitions on role_definitions.id = users.role_definition_id
-          where role_definitions.id is null or role_definitions.base_role <> users.role
-        ) as "invalidUserRoleDefinitions",
-        (
-          select count(*)::int
-          from role_definitions
-          where jsonb_typeof(permissions) <> 'object'
-            or not permissions ?& array[
-              'manageProjects',
-              'manageUsers',
-              'manageTasks',
-              'approveWorkLogs',
-              'exportReports',
-              'viewAudit'
-            ]
-            or jsonb_typeof(permissions->'manageProjects') <> 'boolean'
-            or jsonb_typeof(permissions->'manageUsers') <> 'boolean'
-            or jsonb_typeof(permissions->'manageTasks') <> 'boolean'
-            or jsonb_typeof(permissions->'approveWorkLogs') <> 'boolean'
-            or jsonb_typeof(permissions->'exportReports') <> 'boolean'
-            or jsonb_typeof(permissions->'viewAudit') <> 'boolean'
-            or tone not in ('violet', 'blue', 'green', 'orange', 'gray')
-        ) as "invalidRolePermissions",
-        (
-          select count(*)::int
-          from tasks
-          left join users assignees on assignees.id = tasks.assignee_id
-          left join role_definitions assignee_roles
-            on assignee_roles.id = assignees.role_definition_id
-          left join users testers on testers.id = tasks.tester_id
-          left join role_definitions tester_roles
-            on tester_roles.id = testers.role_definition_id
-          where tasks.status <> 'done'
-            and (
-              (tasks.assignee_id is not null and coalesce((assignee_roles.permissions->>'manageTasks')::boolean, false) = false)
-              or (tasks.tester_id is not null and coalesce((tester_roles.permissions->>'manageTasks')::boolean, false) = false)
-            )
-        ) as "invalidTaskRoleAssignments",
         (select count(*)::int from project_members) as "projectMemberCount",
         (select count(*)::int from projects where archived = false) as "activeProjectCount",
         (select count(*)::int from sprints) as "sprintCount",
@@ -282,22 +191,12 @@ async function main(): Promise<void> {
 
     const verified =
       summary.projectMembersTable &&
-      summary.roleDefinitionsTable &&
       summary.loginRateLimitsTable &&
       summary.testerColumn &&
       summary.testerRoleValues === 2 &&
       summary.requiredConstraints === 8 &&
-      summary.requiredRoleConstraints === 3 &&
-      summary.requiredRoleIndexes === 1 &&
-      summary.workLogApprovalColumns === 4 &&
-      summary.requiredWorkLogApprovalConstraints === 1 &&
-      summary.requiredWorkLogApprovalIndexes === 1 &&
       summary.requiredSprintIndexes === 2 &&
       summary.collaborationTables === 3 &&
-      summary.roleDefinitionCount >= 5 &&
-      summary.invalidUserRoleDefinitions === 0 &&
-      summary.invalidRolePermissions === 0 &&
-      summary.invalidTaskRoleAssignments === 0 &&
       summary.missingOwnerManagers === 0 &&
       summary.duplicateActiveSprintGroups === 0 &&
       summary.invalidTaskAssignees === 0 &&

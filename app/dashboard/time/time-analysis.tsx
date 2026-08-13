@@ -2,7 +2,6 @@
 
 import {
   CalendarDays,
-  Check,
   CheckCircle2,
   Clock3,
   Gauge,
@@ -10,7 +9,6 @@ import {
   Search,
   Trash2,
   TrendingUp,
-  Undo2,
   UserRound,
   X,
 } from "lucide-react";
@@ -41,12 +39,7 @@ type WorkLogRecord = {
   workDate: string;
   durationHours: number;
   note: string;
-  approvalStatus: "pending" | "approved" | "rejected";
-  approvedByName: string | null;
-  approvedAt: string | null;
-  approvalComment: string;
   canDelete: boolean;
-  canApprove: boolean;
 };
 type ProjectOption = {
   id: string;
@@ -85,7 +78,7 @@ const initialFrom = initialFromDate.toISOString().slice(0, 10);
  * @return 工时分析组件。
  */
 export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: string }) {
-  const { confirm, prompt } = useDashboardDialog();
+  const { confirm } = useDashboardDialog();
   const [logs, setLogs] = useState<WorkLogRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -309,52 +302,6 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
     }
   }
 
-  /**
-   * 审核或退回项目成员提交的工时记录。
-   *
-   * @param log 待审核的工时记录。
-   * @param approvalStatus 目标审核状态。
-   * @return 审核完成后的 Promise。
-   */
-  async function reviewLog(
-    log: WorkLogRecord,
-    approvalStatus: "approved" | "rejected",
-  ) {
-    const approvalComment =
-      approvalStatus === "rejected"
-        ? await prompt({
-            title: "退回工时记录",
-            message: `请说明退回“${log.taskTitle}”这条工时的原因，成员可据此补充或修正。`,
-            inputLabel: "退回原因",
-            placeholder: "例如：工作说明不完整，请补充交付结果。",
-            confirmLabel: "确认退回",
-            tone: "danger",
-          })
-        : "";
-    if (approvalStatus === "rejected" && !approvalComment?.trim()) return;
-    if (approvalStatus === "approved") {
-      const confirmed = await confirm({
-        title: "通过工时审核",
-        message: `确认通过“${log.taskTitle}”的 ${log.durationHours.toFixed(1)} 小时工时记录吗？`,
-        confirmLabel: "通过审核",
-      });
-      if (!confirmed) return;
-    }
-    try {
-      const response = await fetch(`/api/work-logs/${log.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalStatus, approvalComment }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "工时审核失败。");
-      setNotice(approvalStatus === "approved" ? "工时已通过审核" : "工时已退回补充");
-      await loadLogs();
-    } catch (reviewError) {
-      setError(reviewError instanceof Error ? reviewError.message : "工时审核失败。");
-    }
-  }
-
   return (
     <div className="module-page time-page">
       <section className="module-heading">
@@ -430,7 +377,7 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
         {loading ? <div className="module-loading">正在加载工时记录…</div> : visibleLogs.length ? (
           <div className="work-log-table-wrap">
             <table className="work-log-table">
-              <thead><tr><th>日期</th><th>工作内容</th><th>成员</th><th>工时</th><th>审核</th><th /></tr></thead>
+              <thead><tr><th>日期</th><th>工作内容</th><th>成员</th><th>工时</th><th /></tr></thead>
               <tbody>{paginatedLogs.map((log) => (
                 <tr key={log.id}>
                   <td><span className="work-log-date"><CalendarDays size={14} /> {log.workDate.slice(0, 10)}</span></td>
@@ -448,46 +395,7 @@ export default function TimeAnalysis({ initialTaskId = "" }: { initialTaskId?: s
                     </div>
                   </td>
                   <td><strong className="work-log-hours">{log.durationHours.toFixed(1)}h</strong></td>
-                  <td>
-                    <span
-                      className={`work-log-approval approval-${log.approvalStatus}`}
-                      title={
-                        log.approvalComment ||
-                        (log.approvedByName ? `审核人：${log.approvedByName}` : "等待项目负责人审核")
-                      }
-                    >
-                      {log.approvalStatus === "pending"
-                        ? "待审核"
-                        : log.approvalStatus === "approved"
-                          ? "已通过"
-                          : "已退回"}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="work-log-actions">
-                      {log.canApprove && log.approvalStatus !== "approved" && (
-                        <button
-                          type="button"
-                          onClick={() => void reviewLog(log, "approved")}
-                          aria-label={`通过 ${log.taskTitle} 的工时审核`}
-                          title="通过审核"
-                        >
-                          <Check size={14} />
-                        </button>
-                      )}
-                      {log.canApprove && log.approvalStatus !== "rejected" && (
-                        <button
-                          type="button"
-                          onClick={() => void reviewLog(log, "rejected")}
-                          aria-label={`退回 ${log.taskTitle} 的工时记录`}
-                          title="退回补充"
-                        >
-                          <Undo2 size={14} />
-                        </button>
-                      )}
-                      {log.canDelete && <button type="button" onClick={() => void deleteLog(log)} aria-label={`删除 ${log.taskTitle} 的工时记录`} title="删除工时"><Trash2 size={14} /></button>}
-                    </div>
-                  </td>
+                  <td>{log.canDelete && <button type="button" onClick={() => void deleteLog(log)} aria-label={`删除 ${log.taskTitle} 的工时记录`}><Trash2 size={14} /></button>}</td>
                 </tr>
               ))}</tbody>
             </table>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { CurrentUser } from "./session";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -11,6 +12,16 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
  */
 export function apiError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+/**
+ * 判断用户是否具备组织级用户管理权限。
+ *
+ * @param user 当前登录用户。
+ * @return 具备用户管理权限时返回 true。
+ */
+export function canManageUsers(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "super_admin" || user.role === "project_admin";
 }
 
 /**

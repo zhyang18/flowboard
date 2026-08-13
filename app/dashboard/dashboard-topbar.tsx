@@ -101,7 +101,7 @@ export default function DashboardTopbar({ user }: { user: CurrentUser }) {
   const [notificationError, setNotificationError] = useState("");
   const meta =
     pageMeta.find((item) => pathname.startsWith(item.path)) ?? pageMeta[0];
-  const canManageUsers = user.role === "super_admin" || user.permissions.manageUsers;
+  const canManageUsers = user.role === "super_admin" || user.role === "project_admin";
 
   /**
    * 从服务端加载当前用户可处理的交付风险消息。
@@ -306,7 +306,7 @@ export default function DashboardTopbar({ user }: { user: CurrentUser }) {
               </span>
               <div>
                 <b>{user.name}</b>
-                <span>{user.roleName || roleLabels[user.role]}</span>
+                <span>{roleLabels[user.role]}</span>
               </div>
               <em><ShieldCheck size={12} /> 账号正常</em>
             </header>

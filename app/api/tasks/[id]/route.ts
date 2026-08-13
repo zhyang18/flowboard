@@ -6,7 +6,6 @@ import {
   auditLogs,
   projectMembers,
   projects,
-  roleDefinitions,
   sprints,
   tasks,
   users,
@@ -14,11 +13,9 @@ import {
 } from "@/db/schema";
 import {
   canApproveTaskCompletion,
-  canBeTaskDeveloper,
-  canBeTaskTester,
   canChangeTaskStatus,
   canEditTask,
-  canManageTasksInProject,
+  canManageProject,
   getProjectAccess,
 } from "@/lib/authorization";
 import { apiError, textValue } from "@/lib/api";
@@ -90,7 +87,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (isCompletedSprintStatus(existingRecord.sprintStatus)) {
     return apiError("已完成迭代为历史快照，请先重新打开后再修改任务。", 409);
   }
-  const managesExistingProject = canManageTasksInProject(currentUser, existingAccess);
+  const managesExistingProject = canManageProject(currentUser, existingAccess);
   if (currentUser.role === "tester" && !managesExistingProject) {
     const unsupportedFields = Object.keys(body).filter((field) => field !== "status");
     if (unsupportedFields.length > 0) {
@@ -117,7 +114,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       ? existingAccess
       : await getProjectAccess(currentUser, requestedProjectId);
   if (!targetAccess || targetAccess.archived) return apiError("所属项目不存在。", 404);
-  if (requestedProjectId !== existing.projectId && !canManageTasksInProject(currentUser, targetAccess)) {
+  if (requestedProjectId !== existing.projectId && !canManageProject(currentUser, targetAccess)) {
     return apiError("无权将任务移动到目标项目。", 403);
   }
 
@@ -127,7 +124,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         ? body.assigneeId
         : null
       : existing.assigneeId;
-  if (assigneeId !== existing.assigneeId && !canManageTasksInProject(currentUser, targetAccess)) {
+  if (assigneeId !== existing.assigneeId && !canManageProject(currentUser, targetAccess)) {
     return apiError("只有项目负责人可以调整任务负责人。", 403);
   }
   const testerId =
@@ -136,7 +133,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         ? body.testerId
         : null
       : existing.testerId;
-  if (testerId !== existing.testerId && !canManageTasksInProject(currentUser, targetAccess)) {
+  if (testerId !== existing.testerId && !canManageProject(currentUser, targetAccess)) {
     return apiError("只有项目负责人可以调整测试负责人。", 403);
   }
   const sprintId =
@@ -147,7 +144,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       : requestedProjectId === existing.projectId
         ? existing.sprintId
         : null;
-  if (sprintId !== existing.sprintId && !canManageTasksInProject(currentUser, targetAccess)) {
+  if (sprintId !== existing.sprintId && !canManageProject(currentUser, targetAccess)) {
     return apiError("只有项目负责人可以调整任务迭代。", 403);
   }
 
@@ -200,35 +197,20 @@ export async function PATCH(request: Request, context: RouteContext) {
       requestedProjectId !== existing.projectId)
   ) {
     const [assignee] = await db
-      .select({
-        id: users.id,
-        role: users.role,
-        permissions: roleDefinitions.permissions,
-      })
+      .select({ id: users.id })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
-      .innerJoin(
-        roleDefinitions,
-        eq(users.roleDefinitionId, roleDefinitions.id),
-      )
       .where(
         and(
           eq(projectMembers.projectId, requestedProjectId),
           eq(projectMembers.userId, assigneeId),
           eq(users.status, "active"),
           sql`${projectMembers.role} in ('manager', 'member')`,
+          sql`${users.role} not in ('tester', 'viewer')`,
         ),
       )
       .limit(1);
-    if (
-      !assignee ||
-      !canBeTaskDeveloper({
-        role: assignee.role,
-        permissions: assignee.permissions,
-      })
-    ) {
-      return apiError("任务负责人必须是该项目中具备任务权限的有效研发成员。");
-    }
+    if (!assignee) return apiError("任务负责人必须是该项目的有效成员。");
   }
   if (
     testerId &&
@@ -237,32 +219,20 @@ export async function PATCH(request: Request, context: RouteContext) {
       requestedProjectId !== existing.projectId)
   ) {
     const [tester] = await db
-      .select({
-        id: users.id,
-        role: users.role,
-        permissions: roleDefinitions.permissions,
-      })
+      .select({ id: users.id })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
-      .innerJoin(
-        roleDefinitions,
-        eq(users.roleDefinitionId, roleDefinitions.id),
-      )
       .where(
         and(
           eq(projectMembers.projectId, requestedProjectId),
           eq(projectMembers.userId, testerId),
           eq(projectMembers.role, "tester"),
+          eq(users.role, "tester"),
           eq(users.status, "active"),
         ),
       )
       .limit(1);
-    if (
-      !tester ||
-      !canBeTaskTester({ role: tester.role, permissions: tester.permissions })
-    ) {
-      return apiError("测试负责人必须是该项目中具备任务权限的有效测试人员。");
-    }
+    if (!tester) return apiError("测试负责人必须是该项目的有效测试人员。");
   }
   if (sprintId) {
     const [sprint] = await db
@@ -436,8 +406,8 @@ export async function DELETE(request: Request, context: RouteContext) {
   const existing = existingRecord.task;
   const access = await getProjectAccess(currentUser, existing.projectId);
   if (!access || access.archived) return apiError("任务不存在。", 404);
-  if (!canEditTask(currentUser, access, existing)) {
-    return apiError("无权删除该任务。", 403);
+  if (!canManageProject(currentUser, access) && existing.reporterId !== currentUser.id) {
+    return apiError("只能删除自己创建的任务。", 403);
   }
   if (isCompletedSprintStatus(existingRecord.sprintStatus)) {
     return apiError("已完成迭代为历史快照，请先重新打开后再删除任务。", 409);

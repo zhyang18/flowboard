@@ -1,8 +1,4 @@
-import type {
-  SprintStatus,
-  TaskStatus,
-  WorkLogApprovalStatus,
-} from "@/db/schema";
+import type { SprintStatus, TaskStatus } from "@/db/schema";
 
 const HOURS_EPSILON = 0.0001;
 
@@ -36,16 +32,13 @@ export function hasRecordedActualHours(actualHours: number): boolean {
  * @param status 任务当前状态。
  * @param actualHours 任务当前汇总的实际工时。
  * @param deletedHours 待删除明细的工时。
- * @param approvalStatus 工时当前审核状态。
  * @return 非已完成任务始终返回 true；已完成任务仍有实际工时时返回 true。
  */
 export function canDeleteWorkLog(
   status: TaskStatus,
   actualHours: number,
   deletedHours: number,
-  approvalStatus: WorkLogApprovalStatus = "pending",
 ): boolean {
-  if (approvalStatus === "approved") return false;
   return status !== "done" || actualHours - deletedHours > HOURS_EPSILON;
 }
 

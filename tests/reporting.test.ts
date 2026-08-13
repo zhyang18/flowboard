@@ -4,7 +4,6 @@ import {
   buildPeriodTrend,
   countWeekdays,
   dateKeyInTimeZone,
-  rollingDateRange,
   startOfUtcDay,
 } from "../lib/reporting";
 
@@ -29,16 +28,6 @@ test("dateKeyInTimeZone 会遵循工作空间时区", () => {
   const instant = new Date("2026-08-07T17:30:00Z");
   assert.equal(dateKeyInTimeZone(instant, "Asia/Singapore"), "2026-08-08");
   assert.equal(dateKeyInTimeZone(instant, "UTC"), "2026-08-07");
-});
-
-test("rollingDateRange 会按工作空间当天计算最近日期窗口", () => {
-  const range = rollingDateRange(
-    new Date("2026-08-07T17:30:00Z"),
-    "Asia/Singapore",
-    7,
-  );
-  assert.equal(range.from.toISOString(), "2026-08-02T00:00:00.000Z");
-  assert.equal(range.to.toISOString(), "2026-08-08T00:00:00.000Z");
 });
 
 test("buildPeriodTrend 会将周期工时完整且仅汇总一次", () => {

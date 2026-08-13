@@ -9,10 +9,7 @@ import {
   taskRejections,
   tasks,
 } from "@/db/schema";
-import {
-  canContributeToProject,
-  getProjectAccess,
-} from "@/lib/authorization";
+import { getProjectAccess } from "@/lib/authorization";
 import { attachmentDraftToken } from "@/lib/attachments";
 import { apiError, textValue } from "@/lib/api";
 import { hasTrustedOrigin } from "@/lib/request-security";
@@ -71,9 +68,6 @@ export async function POST(request: Request, context: RouteContext) {
   if (!record) return apiError("任务不存在。", 404);
   const access = await getProjectAccess(currentUser, record.task.projectId);
   if (!access || access.archived) return apiError("任务不存在。", 404);
-  if (!canContributeToProject(currentUser, access)) {
-    return apiError("当前角色无权执行测试打回。", 403);
-  }
   if (currentUser.role !== "tester" || record.task.testerId !== currentUser.id) {
     return apiError("只有该任务指定的测试负责人可以提交测试不通过。", 403);
   }

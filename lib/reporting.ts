@@ -48,26 +48,6 @@ export function countWeekdays(from: Date, to: Date): number {
 }
 
 /**
- * 生成以工作空间本地日期为终点的滚动 UTC 日期区间。
- *
- * @param now 当前时间点。
- * @param timeZone 工作空间 IANA 时区。
- * @param days 需要包含的自然日数量。
- * @return 可用于日期型工时查询的起止 UTC 零点。
- */
-export function rollingDateRange(
-  now: Date,
-  timeZone: string,
-  days: number,
-): { from: Date; to: Date } {
-  const safeDays = Math.max(1, Math.trunc(days));
-  const to = new Date(`${dateKeyInTimeZone(now, timeZone)}T00:00:00.000Z`);
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - safeDays + 1);
-  return { from, to };
-}
-
-/**
  * 将选定周期压缩成最多六个连续趋势桶。
  *
  * @param logs 包含日期和工时的明细。

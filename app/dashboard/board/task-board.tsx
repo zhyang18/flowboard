@@ -1,9 +1,6 @@
 "use client";
 
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   CalendarClock,
   CalendarRange,
   CheckCircle2,
@@ -116,72 +113,6 @@ type WorkLogForm = {
   durationHours: number;
   note: string;
 };
-
-type TaskSortKey =
-  | "title"
-  | "project"
-  | "status"
-  | "assignee"
-  | "dueDate"
-  | "hours";
-
-type SortDirection = "asc" | "desc";
-
-/**
- * 渲染可切换方向的任务列表表头。
- *
- * @param label 表头显示文本。
- * @param sortKey 当前表头对应的排序字段。
- * @param activeSortKey 当前生效的排序字段。
- * @param direction 当前排序方向。
- * @param onSort 触发表头排序的回调。
- * @return 可访问的任务排序表头。
- */
-function TaskSortableHeader({
-  label,
-  sortKey,
-  activeSortKey,
-  direction,
-  onSort,
-}: {
-  label: string;
-  sortKey: TaskSortKey;
-  activeSortKey: TaskSortKey;
-  direction: SortDirection;
-  onSort: (sortKey: TaskSortKey) => void;
-}) {
-  const active = activeSortKey === sortKey;
-  return (
-    <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        className={`table-sort-button${active ? " active" : ""}`}
-        type="button"
-        onClick={() => onSort(sortKey)}
-      >
-        <span>{label}</span>
-        {active ? (
-          direction === "asc" ? <ArrowUp size={13} /> : <ArrowDown size={13} />
-        ) : (
-          <ArrowUpDown size={13} />
-        )}
-      </button>
-    </th>
-  );
-}
-
-/**
- * 比较两个允许为空的文本，并把空值稳定排列在末尾。
- *
- * @param left 左侧文本。
- * @param right 右侧文本。
- * @return 适用于数组排序的比较结果。
- */
-function compareNullableText(left: string | null, right: string | null) {
-  if (left === right) return 0;
-  if (!left) return 1;
-  if (!right) return -1;
-  return left.localeCompare(right, "zh-CN");
-}
 
 /**
  * 突出展示任务所属项目、迭代名称和迭代状态。
@@ -307,10 +238,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [assigneeId, setAssigneeId] = useState("");
   const [testerId, setTesterId] = useState("");
   const [sprintId, setSprintId] = useState("");
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | "">("");
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<TaskSortKey>("dueDate");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [viewMode, setViewMode] = usePersistentViewMode(
     "flowboard:tasks:view-mode",
   );
@@ -401,53 +329,12 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     return () => window.clearTimeout(timer);
   }, [initialTaskId, loading, tasks]);
 
-  const visibleTasks = useMemo(() => {
-    const statusOrder = new Map(taskStatuses.map((status, index) => [status, index]));
-    const filtered = statusFilter
-      ? tasks.filter((task) => task.status === statusFilter)
-      : tasks;
-    const directionFactor = sortDirection === "asc" ? 1 : -1;
-    return [...filtered].sort((left, right) => {
-      let result = 0;
-      if (sortKey === "title") result = left.title.localeCompare(right.title, "zh-CN");
-      if (sortKey === "project") {
-        result = `${left.projectCode} ${left.projectName}`.localeCompare(
-          `${right.projectCode} ${right.projectName}`,
-          "zh-CN",
-        );
-      }
-      if (sortKey === "status") {
-        result = (statusOrder.get(left.status) ?? 0) - (statusOrder.get(right.status) ?? 0);
-      }
-      if (sortKey === "assignee") {
-        if (!left.assigneeName || !right.assigneeName) {
-          result = compareNullableText(left.assigneeName, right.assigneeName);
-          if (result !== 0) return result;
-        } else {
-          result = left.assigneeName.localeCompare(right.assigneeName, "zh-CN");
-        }
-      }
-      if (sortKey === "dueDate") {
-        if (!left.dueDate || !right.dueDate) {
-          result = compareNullableText(left.dueDate, right.dueDate);
-          if (result !== 0) return result;
-        } else {
-          result = left.dueDate.localeCompare(right.dueDate, "zh-CN");
-        }
-      }
-      if (sortKey === "hours") result = left.actualHours - right.actualHours;
-      return result === 0
-        ? left.title.localeCompare(right.title, "zh-CN")
-        : result * directionFactor;
-    });
-  }, [sortDirection, sortKey, statusFilter, tasks]);
-
   const metrics = useMemo(() => {
-    const estimate = visibleTasks.reduce((sum, task) => sum + task.estimateHours, 0);
-    const actual = visibleTasks.reduce((sum, task) => sum + task.actualHours, 0);
-    const overdue = visibleTasks.filter((task) => task.overdue).length;
+    const estimate = tasks.reduce((sum, task) => sum + task.estimateHours, 0);
+    const actual = tasks.reduce((sum, task) => sum + task.actualHours, 0);
+    const overdue = tasks.filter((task) => task.overdue).length;
     return { estimate, actual, overdue };
-  }, [visibleTasks]);
+  }, [tasks]);
   const {
     page,
     pageSize,
@@ -455,23 +342,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     setPage,
     changePageSize,
     resetPage,
-  } = useClientPagination(visibleTasks);
-
-  /**
-   * 切换任务列表的排序字段或当前字段方向。
-   *
-   * @param nextSortKey 用户点击的排序字段。
-   * @return 无返回值。
-   */
-  function changeSort(nextSortKey: TaskSortKey) {
-    if (nextSortKey === sortKey) {
-      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(nextSortKey);
-      setSortDirection("asc");
-    }
-    resetPage();
-  }
+  } = useClientPagination(tasks);
 
   /**
    * 在可写项目中打开新建任务表单。
@@ -775,7 +646,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       </section>
 
       <section className="board-summary">
-        <div><small>任务总数</small><b>{visibleTasks.length}</b></div>
+        <div><small>任务总数</small><b>{tasks.length}</b></div>
         <div><small>预估工时</small><b>{metrics.estimate.toFixed(1)}h</b></div>
         <div><small>实际投入</small><b>{metrics.actual.toFixed(1)}h</b></div>
         <div className={metrics.overdue ? "risk" : ""}><small>已逾期</small><b>{metrics.overdue}</b></div>
@@ -820,19 +691,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           <ChevronDown size={14} />
         </label>
         <label className="module-select">
-          <CheckCircle2 size={14} />
-          <select value={statusFilter} onChange={(event) => {
-            setStatusFilter(event.target.value as TaskStatus | "");
-            resetPage();
-          }}>
-            <option value="">全部状态</option>
-            {taskStatuses.map((status) => (
-              <option key={status} value={status}>{taskStatusLabels[status]}</option>
-            ))}
-          </select>
-          <ChevronDown size={14} />
-        </label>
-        <label className="module-select">
           <UserRound size={14} />
           <select value={assigneeId} onChange={(event) => {
             setAssigneeId(event.target.value);
@@ -855,7 +713,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           <ChevronDown size={14} />
         </label>
         <div className="toolbar-view-options">
-          <span className="toolbar-result">显示 {visibleTasks.length} 项任务</span>
+          <span className="toolbar-result">显示 {tasks.length} 项任务</span>
           <ViewModeToggle
             value={viewMode}
             onChange={setViewMode}
@@ -872,8 +730,8 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       ) : viewMode === "card" ? (
         <section className="kanban-scroll" aria-label="任务看板">
           <div className="kanban-board">
-            {taskStatuses.filter((status) => !statusFilter || status === statusFilter).map((status) => {
-              const allColumnTasks = visibleTasks.filter((task) => task.status === status);
+            {taskStatuses.map((status) => {
+              const allColumnTasks = tasks.filter((task) => task.status === status);
               const columnTasks = paginatedTasks.filter((task) => task.status === status);
               const columnEstimate = allColumnTasks.reduce((sum, task) => sum + task.estimateHours, 0);
               return (
@@ -993,17 +851,17 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
             })}
           </div>
         </section>
-      ) : visibleTasks.length ? (
+      ) : tasks.length ? (
         <section className="entity-table-shell" aria-label="任务列表">
           <table className="entity-table task-entity-table">
             <thead>
               <tr>
-                <TaskSortableHeader label="任务" sortKey="title" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
-                <TaskSortableHeader label="项目 / 迭代" sortKey="project" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
-                <TaskSortableHeader label="状态" sortKey="status" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
-                <TaskSortableHeader label="负责人" sortKey="assignee" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
-                <TaskSortableHeader label="截止 / 完成" sortKey="dueDate" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
-                <TaskSortableHeader label="工时" sortKey="hours" activeSortKey={sortKey} direction={sortDirection} onSort={changeSort} />
+                <th>任务</th>
+                <th>项目 / 迭代</th>
+                <th>状态</th>
+                <th>负责人</th>
+                <th>截止 / 完成</th>
+                <th>工时</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -1104,11 +962,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         <div className="module-empty large"><ClipboardList size={30} /><b>没有符合条件的任务</b><span>调整筛选条件，或创建一项新任务。</span></div>
       )}
 
-      {!loading && visibleTasks.length > 0 && (
+      {!loading && tasks.length > 0 && (
         <PaginationControls
           page={page}
           pageSize={pageSize}
-          total={visibleTasks.length}
+          total={tasks.length}
           itemLabel="项任务"
           onPageChange={setPage}
           onPageSizeChange={changePageSize}

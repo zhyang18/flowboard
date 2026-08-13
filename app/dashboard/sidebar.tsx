@@ -97,7 +97,7 @@ export default function DashboardSidebar({
         {navigation.slice(6).filter((item) =>
           item.href !== "/dashboard/users" ||
           user.role === "super_admin" ||
-          user.permissions.manageUsers,
+          user.role === "project_admin",
         ).map((item) => (
           item.href ? (
             <Link
@@ -136,7 +136,7 @@ export default function DashboardSidebar({
           <div>
             <b>{user.name}</b>
             <small>
-              <Shield size={11} /> {user.roleName || roleLabels[user.role]}
+              <Shield size={11} /> {roleLabels[user.role]}
             </small>
           </div>
           <LogoutButton />
