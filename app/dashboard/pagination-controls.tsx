@@ -1,7 +1,10 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, type ChangeEvent } from "react";
+import { useState } from "react";
+
+const pageSizeOptions = [10, 30, 50, 100] as const;
 
 type PaginationControlsProps = {
   /** 当前页码 */
@@ -14,7 +17,7 @@ type PaginationControlsProps = {
   itemLabel: string;
   /** 页码变化回调 */
   onPageChange: (page: number) => void;
-  /** 每页数量变化回调（保持接口兼容，极简模式下固定每页数不变） */
+  /** 每页数量变化回调 */
   onPageSizeChange: (pageSize: number) => void;
 };
 
@@ -103,15 +106,15 @@ export function useClientPagination<T>(items: T[], initialPageSize = 10) {
 }
 
 /**
- * 极简翻页控制组件，只展示上一页/下一页箭头与中间连续页码数字。
+ * 紧凑型分页控制组件，包含每页条数下拉选择与极简翻页按钮。
  *
  * @param page 当前页码。
  * @param pageSize 当前每页数量。
  * @param total 列表总条目数。
  * @param itemLabel 条目单位名称。
  * @param onPageChange 页码变化回调。
- * @param onPageSizeChange 每页数量变化回调（接口保留，极简模式暂不展示每页选项）。
- * @return 极简翻页组件。
+ * @param onPageSizeChange 每页数量变化回调。
+ * @return 紧凑型分页组件。
  */
 export default function PaginationControls({
   page,
@@ -119,15 +122,35 @@ export default function PaginationControls({
   total,
   itemLabel,
   onPageChange,
+  onPageSizeChange,
 }: PaginationControlsProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const visiblePages = getVisiblePages(currentPage, totalPages);
 
+  function handlePageSizeChange(e: ChangeEvent<HTMLSelectElement>) {
+    onPageSizeChange(Number(e.target.value));
+  }
+
   return (
     <nav className="list-pagination" aria-label={`${itemLabel}列表翻页`}>
-      {/* 左侧：总数摘要 */}
-      <span className="pagination-total">共 {total} {itemLabel}</span>
+      {/* 左侧：总数与每页条数选择 */}
+      <div className="pagination-info">
+        <span className="pagination-total">共 {total} {itemLabel}</span>
+        <select
+          className="pagination-size-select"
+          value={pageSizeOptions.includes(pageSize as any) ? pageSize : 10}
+          onChange={handlePageSizeChange}
+          title="选择每页显示条数"
+          aria-label="选择每页显示条数"
+        >
+          {pageSizeOptions.map((option) => (
+            <option key={option} value={option}>
+              {option} 条/页
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* 右侧：翻页按钮区 */}
       <div className="pagination-pages">

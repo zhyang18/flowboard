@@ -1871,6 +1871,30 @@ textarea {
   font-size: 11px;
 }
 
+.pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pagination-size-select {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink-700);
+  font-size: 11px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.pagination-size-select:hover {
+  border-color: var(--ink-300);
+}
+
 .pagination-pages {
   display: flex;
   align-items: center;
