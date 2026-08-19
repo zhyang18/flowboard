@@ -2,7 +2,6 @@ import {
   and,
   count,
   countDistinct,
-  desc,
   eq,
   gte,
   ilike,
@@ -39,7 +38,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * 获取用户列表，并从真实项目成员和最近工时派生项目数与容量。
+ * 获取用户列表，支持按表头字段排序，并从真实项目成员和最近工时派生项目数与容量。
  *
  * @param request 当前用户查询请求。
  * @return 用户分页、统计和筛选数据。
@@ -53,6 +52,8 @@ export async function GET(request: Request) {
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
   const department = searchParams.get("department")?.trim().slice(0, 60) ?? "";
   const status = searchParams.get("status") ?? "";
+  const sortBy = searchParams.get("sortBy") ?? "createdAt";
+  const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = Math.min(500, Math.max(1, Number(searchParams.get("pageSize")) || 10));
   const conditions: SQL[] = [];
@@ -64,6 +65,31 @@ export async function GET(request: Request) {
   }
   if (department) conditions.push(eq(users.department, department));
   if (isUserStatus(status)) conditions.push(eq(users.status, status));
+
+  const orderClauses: SQL[] = [];
+  if (sortBy === "name") {
+    orderClauses.push(sortOrder === "asc" ? sql`${users.name} asc` : sql`${users.name} desc`);
+  } else if (sortBy === "department") {
+    orderClauses.push(
+      sortOrder === "asc"
+        ? sql`${users.department} asc, ${users.team} asc`
+        : sql`${users.department} desc, ${users.team} desc`,
+    );
+  } else if (sortBy === "role") {
+    orderClauses.push(sortOrder === "asc" ? sql`${users.role} asc` : sql`${users.role} desc`);
+  } else if (sortBy === "status") {
+    orderClauses.push(sortOrder === "asc" ? sql`${users.status} asc` : sql`${users.status} desc`);
+  } else if (sortBy === "lastSeenAt") {
+    orderClauses.push(
+      sortOrder === "asc"
+        ? sql`${users.lastSeenAt} asc nulls last`
+        : sql`${users.lastSeenAt} desc nulls last`,
+    );
+  } else {
+    orderClauses.push(
+      sortOrder === "asc" ? sql`${users.createdAt} asc` : sql`${users.createdAt} desc`,
+    );
+  }
 
   const where = conditions.length ? and(...conditions) : undefined;
   const db = getDb();
@@ -84,7 +110,7 @@ export async function GET(request: Request) {
       })
       .from(users)
       .where(where)
-      .orderBy(desc(users.createdAt))
+      .orderBy(...orderClauses)
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     db.select({ value: count() }).from(users).where(where),

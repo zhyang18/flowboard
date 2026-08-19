@@ -2,8 +2,10 @@
 
 import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Check,
-  ChevronRight,
   CircleUserRound,
   Clock3,
   Edit3,
@@ -29,6 +31,11 @@ import {
 } from "react";
 import type { FormEvent } from "react";
 import type { UserRole, UserStatus } from "@/db/schema";
+import {
+  defaultSystemRoles,
+  permissionRows,
+  type RoleDefinition,
+} from "@/lib/roles";
 import { roleLabels, statusLabels } from "@/lib/users";
 import { useDashboardDialog } from "../dashboard-dialog-provider";
 import PaginationControls from "../pagination-controls";
@@ -77,6 +84,13 @@ type UserForm = {
   password: string;
 };
 
+type RoleForm = {
+  name: string;
+  description: string;
+  tone: string;
+  permissions: boolean[];
+};
+
 const emptyForm: UserForm = {
   name: "",
   email: "",
@@ -88,51 +102,20 @@ const emptyForm: UserForm = {
   password: "",
 };
 
-const roleCards: Array<{
-  role: UserRole;
-  description: string;
-  tone: string;
-  permissions: boolean[];
-}> = [
-  {
-    role: "super_admin",
-    description: "管理组织、权限、审计及全部项目",
-    tone: "violet",
-    permissions: [true, true, true, true, true, true],
-  },
-  {
-    role: "project_admin",
-    description: "管理指定项目、成员、迭代和报表",
-    tone: "blue",
-    permissions: [true, true, true, true, true, false],
-  },
-  {
-    role: "member",
-    description: "处理任务、记录工时并参与项目协作",
-    tone: "green",
-    permissions: [false, false, true, false, false, false],
-  },
-  {
-    role: "tester",
-    description: "负责迭代验证、任务验收并登记测试工时",
-    tone: "violet",
-    permissions: [false, false, true, false, false, false],
-  },
-  {
-    role: "viewer",
-    description: "查看获授权的项目与公开报表",
-    tone: "gray",
-    permissions: [false, false, false, false, false, false],
-  },
-];
+const emptyRoleForm: RoleForm = {
+  name: "",
+  description: "",
+  tone: "blue",
+  permissions: [false, false, false, false, false, false],
+};
 
-const permissionRows = [
-  "项目设置",
-  "用户与团队",
-  "任务管理",
-  "工时审批",
-  "报表导出",
-  "系统审计",
+const toneOptions = [
+  { value: "violet", label: "紫罗兰", color: "#7456ca" },
+  { value: "blue", label: "科技蓝", color: "#2f7df6" },
+  { value: "green", label: "翡翠绿", color: "#21a279" },
+  { value: "orange", label: "琥珀橙", color: "#e37318" },
+  { value: "gray", label: "经典灰", color: "#64748b" },
+  { value: "rose", label: "玫瑰红", color: "#e11d48" },
 ];
 
 /**
@@ -193,6 +176,8 @@ export default function UserManagement({
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
@@ -206,8 +191,15 @@ export default function UserManagement({
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  // 角色管理相关状态
+  const [roles, setRoles] = useState<RoleDefinition[]>(defaultSystemRoles);
+  const [roleModalMode, setRoleModalMode] = useState<"create" | "edit" | null>(null);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [roleForm, setRoleForm] = useState<RoleForm>(emptyRoleForm);
+  const [savingRole, setSavingRole] = useState(false);
+
   /**
-   * 按当前筛选和分页加载用户及派生指标。
+   * 按当前筛选、排序和分页加载用户及派生指标。
    *
    * @return 加载完成后的 Promise。
    */
@@ -217,6 +209,8 @@ export default function UserManagement({
     const params = new URLSearchParams({
       page: String(page),
       pageSize: String(pageSize),
+      sortBy,
+      sortOrder,
     });
     if (query.trim()) params.set("query", query.trim());
     if (department) params.set("department", department);
@@ -258,12 +252,36 @@ export default function UserManagement({
     } finally {
       setLoading(false);
     }
-  }, [department, page, pageSize, query, status]);
+  }, [department, page, pageSize, query, sortBy, sortOrder, status]);
+
+  /**
+   * 从服务端加载全部角色定义和关联成员统计。
+   *
+   * @return 加载完成后的 Promise。
+   */
+  const loadRoles = useCallback(async () => {
+    try {
+      const response = await fetch("/api/roles", { cache: "no-store" });
+      const result = (await response.json()) as { data?: RoleDefinition[]; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "加载角色列表失败。");
+      if (result.data) {
+        setRoles(result.data);
+      }
+    } catch (roleError) {
+      console.error("加载角色列表失败", roleError);
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(loadUsers, query ? 280 : 0);
     return () => window.clearTimeout(timer);
   }, [loadUsers, query]);
+
+  useEffect(() => {
+    if (tab !== "roles") return;
+    const timer = window.setTimeout(() => void loadRoles(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadRoles, tab]);
 
   useEffect(() => {
     if (!notice) return;
@@ -275,6 +293,40 @@ export default function UserManagement({
     () => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null,
     [selectedUserId, users],
   );
+
+  /**
+   * 触发用户列表表头排序。
+   *
+   * @param field 目标排序字段名称。
+   * @return 无返回值。
+   */
+  function handleSort(field: string) {
+    if (sortBy === field) {
+      setSortOrder((current) => (current === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+    setPage(1);
+  }
+
+  /**
+   * 渲染表头排序指示图标。
+   *
+   * @param field 列对应排序字段。
+   * @return 排序图标元素。
+   */
+  function renderSortIcon(field: string) {
+    if (sortBy !== field) {
+      return <ArrowUpDown size={13} className="sort-icon inactive" />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp size={13} className="sort-icon active" />
+    ) : (
+      <ArrowDown size={13} className="sort-icon active" />
+    );
+  }
+
   /**
    * 修改用户列表每页数量并返回第一页。
    *
@@ -433,6 +485,120 @@ export default function UserManagement({
     );
   }
 
+  /**
+   * 打开新建角色模态弹窗。
+   *
+   * @return 无返回值。
+   */
+  function openCreateRole() {
+    setEditingRoleId(null);
+    setRoleForm({
+      name: "",
+      description: "",
+      tone: "blue",
+      permissions: [false, false, false, false, false, false],
+    });
+    setRoleModalMode("create");
+  }
+
+  /**
+   * 打开编辑角色模态弹窗。
+   *
+   * @param role 待编辑的角色对象。
+   * @return 无返回值。
+   */
+  function openEditRole(role: RoleDefinition) {
+    setEditingRoleId(role.id);
+    setRoleForm({
+      name: role.name,
+      description: role.description,
+      tone: role.tone,
+      permissions: [...role.permissions],
+    });
+    setRoleModalMode("edit");
+  }
+
+  /**
+   * 提交保存角色信息（新增或编辑）。
+   *
+   * @param event 角色表单提交事件。
+   * @return 保存流程完成后的 Promise。
+   */
+  async function submitRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingRole(true);
+    setError("");
+
+    try {
+      const isEdit = roleModalMode === "edit" && editingRoleId;
+      const response = await fetch(
+        isEdit ? `/api/roles/${editingRoleId}` : "/api/roles",
+        {
+          method: isEdit ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(roleForm),
+        },
+      );
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "保存角色失败。");
+
+      setRoleModalMode(null);
+      setNotice(isEdit ? "角色配置已更新" : "新角色已创建");
+      await loadRoles();
+    } catch (saveRoleErr) {
+      setError(saveRoleErr instanceof Error ? saveRoleErr.message : "保存角色失败。");
+    } finally {
+      setSavingRole(false);
+    }
+  }
+
+  /**
+   * 删除自定义角色。
+   *
+   * @param role 待删除角色。
+   * @return 删除完成后的 Promise。
+   */
+  async function deleteRole(role: RoleDefinition) {
+    if (role.isSystem) {
+      setNotice("系统内置角色不可删除");
+      return;
+    }
+    const confirmed = await confirm({
+      title: "删除角色",
+      message: `确定删除角色“${role.name}”吗？此操作无法撤销。`,
+      confirmLabel: "删除角色",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/roles/${role.id}`, {
+        method: "DELETE",
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "删除角色失败。");
+
+      setNotice("角色已删除");
+      await loadRoles();
+    } catch (delRoleErr) {
+      setNotice(delRoleErr instanceof Error ? delRoleErr.message : "删除角色失败。");
+    }
+  }
+
+  /**
+   * 切换角色表单中特定权限的勾选状态。
+   *
+   * @param index 权限在 permissionRows 中的索引。
+   * @return 无返回值。
+   */
+  function toggleRolePermission(index: number) {
+    setRoleForm((prev) => {
+      const nextPerms = [...prev.permissions];
+      nextPerms[index] = !nextPerms[index];
+      return { ...prev, permissions: nextPerms };
+    });
+  }
+
   return (
     <div className="user-management-page">
       <section className="user-page-heading">
@@ -441,10 +607,19 @@ export default function UserManagement({
           <h2>用户管理</h2>
           <p>集中维护成员资料、团队归属、账号状态与访问权限。</p>
         </div>
-        <button className="primary-action" type="button" onClick={openCreate}>
-          <Plus size={17} />
-          <span>新建用户</span>
-        </button>
+        {tab === "users" ? (
+          <button className="primary-action" type="button" onClick={openCreate}>
+            <Plus size={17} />
+            <span>新建用户</span>
+          </button>
+        ) : (
+          currentUserRole === "super_admin" && (
+            <button className="primary-action" type="button" onClick={openCreateRole}>
+              <Plus size={17} />
+              <span>新增角色</span>
+            </button>
+          )
+        )}
       </section>
 
       <section className="user-stat-grid" aria-label="用户统计">
@@ -483,7 +658,7 @@ export default function UserManagement({
           type="button"
           onClick={() => setTab("roles")}
         >
-          <KeyRound size={16} /> 角色与权限 <span>5</span>
+          <KeyRound size={16} /> 角色与权限 <span>{roles.length}</span>
         </button>
       </div>
 
@@ -560,7 +735,7 @@ export default function UserManagement({
             </div>
           )}
 
-          {error && !modalMode && (
+          {error && !modalMode && !roleModalMode && (
             <div className="page-error" role="alert">
               <AlertCircle size={18} />
               <span>{error}</span>
@@ -586,11 +761,56 @@ export default function UserManagement({
                           }
                         />
                       </th>
-                      <th>用户</th>
-                      <th>部门 / 团队</th>
-                      <th>角色</th>
-                      <th>账号状态</th>
-                      <th>最后活跃</th>
+                      <th
+                        className="sortable-th"
+                        onClick={() => handleSort("name")}
+                        title="点击按姓名排序"
+                      >
+                        <div className="th-content">
+                          <span>用户</span>
+                          {renderSortIcon("name")}
+                        </div>
+                      </th>
+                      <th
+                        className="sortable-th"
+                        onClick={() => handleSort("department")}
+                        title="点击按部门排序"
+                      >
+                        <div className="th-content">
+                          <span>部门 / 团队</span>
+                          {renderSortIcon("department")}
+                        </div>
+                      </th>
+                      <th
+                        className="sortable-th"
+                        onClick={() => handleSort("role")}
+                        title="点击按角色排序"
+                      >
+                        <div className="th-content">
+                          <span>角色</span>
+                          {renderSortIcon("role")}
+                        </div>
+                      </th>
+                      <th
+                        className="sortable-th"
+                        onClick={() => handleSort("status")}
+                        title="点击按账号状态排序"
+                      >
+                        <div className="th-content">
+                          <span>账号状态</span>
+                          {renderSortIcon("status")}
+                        </div>
+                      </th>
+                      <th
+                        className="sortable-th"
+                        onClick={() => handleSort("lastSeenAt")}
+                        title="点击按最后活跃时间排序"
+                      >
+                        <div className="th-content">
+                          <span>最后活跃</span>
+                          {renderSortIcon("lastSeenAt")}
+                        </div>
+                      </th>
                       <th className="actions-column">操作</th>
                     </tr>
                   </thead>
@@ -636,7 +856,7 @@ export default function UserManagement({
                             </td>
                             <td>
                               <span className={`role-chip role-${user.role}`}>
-                                {roleLabels[user.role]}
+                                {roleLabels[user.role] ?? user.role}
                               </span>
                             </td>
                             <td>
@@ -723,7 +943,7 @@ export default function UserManagement({
                 <dl className="user-facts">
                   <div><dt>所属部门</dt><dd>{selectedUser.department}</dd></div>
                   <div><dt>所属团队</dt><dd>{selectedUser.team}</dd></div>
-                  <div><dt>用户角色</dt><dd>{roleLabels[selectedUser.role]}</dd></div>
+                  <div><dt>用户角色</dt><dd>{roleLabels[selectedUser.role] ?? selectedUser.role}</dd></div>
                   <div><dt>手机号码</dt><dd>{selectedUser.phone || "未填写"}</dd></div>
                   <div><dt>加入时间</dt><dd>{new Date(selectedUser.createdAt).toLocaleDateString("zh-CN")}</dd></div>
                 </dl>
@@ -759,35 +979,68 @@ export default function UserManagement({
       ) : (
         <section className="roles-view">
           <div className="role-card-grid">
-            {roleCards.map((role) => (
-              <article className={`role-card tone-${role.tone}`} key={role.role}>
+            {roles.map((role) => (
+              <article className={`role-card tone-${role.tone}`} key={role.id}>
                 <header>
                   <span><UserRoundCog size={18} /></span>
-                  <b>{stats.total ? Math.max(0, users.filter((user) => user.role === role.role).length) : 0} 人</b>
+                  <b>{role.userCount ?? 0} 人</b>
                 </header>
-                <h3>{roleLabels[role.role]}</h3>
-                <p>{role.description}</p>
-                <button type="button" onClick={() => setNotice("角色模板将在后续权限模块开放编辑")}>
-                  查看权限详情 <ChevronRight size={14} />
-                </button>
+                <div className="role-card-body">
+                  <div className="role-title-row">
+                    <h3>{role.name}</h3>
+                    {role.isSystem && <span className="system-role-tag">系统预设</span>}
+                  </div>
+                  <p>{role.description || "暂无描述"}</p>
+                </div>
+                <div className="role-card-footer">
+                  {currentUserRole === "super_admin" ? (
+                    <div className="role-card-actions">
+                      <button
+                        type="button"
+                        className="role-action-button"
+                        onClick={() => openEditRole(role)}
+                        title="编辑角色信息与权限"
+                      >
+                        <Edit3 size={13} />
+                        <span>编辑权限</span>
+                      </button>
+                      {!role.isSystem && (
+                        <button
+                          type="button"
+                          className="role-action-button danger"
+                          onClick={() => deleteRole(role)}
+                          title="删除此角色"
+                        >
+                          <Trash2 size={13} />
+                          <span>删除</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="role-view-only-hint">
+                      <ShieldCheck size={13} /> 只读查看
+                    </span>
+                  )}
+                </div>
               </article>
             ))}
           </div>
+
           <article className="permission-matrix">
             <header>
               <div>
                 <span className="eyebrow">访问控制</span>
-                <h3>默认权限矩阵</h3>
+                <h3>功能权限矩阵</h3>
               </div>
-              <span>RBAC 权限模型</span>
+              <span>RBAC 角色访问控制模型</span>
             </header>
             <div>
               <table>
                 <thead>
                   <tr>
                     <th>功能权限</th>
-                    {roleCards.map((role) => (
-                      <th key={role.role}>{roleLabels[role.role]}</th>
+                    {roles.map((role) => (
+                      <th key={role.id}>{role.name}</th>
                     ))}
                   </tr>
                 </thead>
@@ -795,13 +1048,16 @@ export default function UserManagement({
                   {permissionRows.map((permission, rowIndex) => (
                     <tr key={permission}>
                       <td>{permission}</td>
-                      {roleCards.map((role) => (
-                        <td key={role.role}>
-                          <span className={role.permissions[rowIndex] ? "permission-yes" : "permission-no"}>
-                            {role.permissions[rowIndex] ? <Check size={14} /> : <X size={13} />}
-                          </span>
-                        </td>
-                      ))}
+                      {roles.map((role) => {
+                        const hasPermission = Boolean(role.permissions[rowIndex]);
+                        return (
+                          <td key={role.id}>
+                            <span className={hasPermission ? "permission-yes" : "permission-no"}>
+                              {hasPermission ? <Check size={14} /> : <X size={13} />}
+                            </span>
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -811,6 +1067,7 @@ export default function UserManagement({
         </section>
       )}
 
+      {/* 用户新增/编辑模态框 */}
       {modalMode && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setModalMode(null)}>
           <section
@@ -907,6 +1164,13 @@ export default function UserManagement({
                     <option value="member">研发成员</option>
                     <option value="tester">测试人员</option>
                     <option value="viewer">只读访客</option>
+                    {roles
+                      .filter((r) => !["super_admin", "project_admin", "member", "tester", "viewer"].includes(r.id))
+                      .map((customRole) => (
+                        <option key={customRole.id} value={customRole.id}>
+                          {customRole.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label>
@@ -928,6 +1192,94 @@ export default function UserManagement({
                 <button type="button" onClick={() => setModalMode(null)}>取消</button>
                 <button className="primary-action" type="submit" disabled={saving}>
                   {saving ? "正在保存…" : modalMode === "create" ? "创建用户" : "保存修改"}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {/* 角色新增/编辑模态框 */}
+      {roleModalMode && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setRoleModalMode(null)}>
+          <section
+            className="user-modal role-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="role-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span className="eyebrow">{roleModalMode === "create" ? "创建自定义角色" : "配置角色权限"}</span>
+                <h2 id="role-modal-title">{roleModalMode === "create" ? "新增角色" : "编辑角色"}</h2>
+              </div>
+              <button type="button" aria-label="关闭" onClick={() => setRoleModalMode(null)}>
+                <X size={19} />
+              </button>
+            </header>
+            <form onSubmit={submitRole}>
+              {error && (
+                <div className="form-error" role="alert">
+                  <AlertCircle size={16} /> {error}
+                </div>
+              )}
+              <div className="modal-form-grid">
+                <label>
+                  <span>角色名称</span>
+                  <input
+                    value={roleForm.name}
+                    onChange={(event) => setRoleForm({ ...roleForm, name: event.target.value })}
+                    placeholder="如：技术总监、敏捷教练、运维专家"
+                    required
+                    maxLength={30}
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  <span>主题色调</span>
+                  <select
+                    value={roleForm.tone}
+                    onChange={(event) => setRoleForm({ ...roleForm, tone: event.target.value })}
+                  >
+                    {toneOptions.map((tone) => (
+                      <option key={tone.value} value={tone.value}>
+                        {tone.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="full-width">
+                  <span>角色职责描述</span>
+                  <input
+                    value={roleForm.description}
+                    onChange={(event) => setRoleForm({ ...roleForm, description: event.target.value })}
+                    placeholder="简述该角色的职责范畴与权限分配目标"
+                    maxLength={200}
+                  />
+                </label>
+              </div>
+
+              <div className="role-permissions-config">
+                <h4>功能权限勾选</h4>
+                <div className="permissions-checkbox-grid">
+                  {permissionRows.map((perm, idx) => (
+                    <label key={perm} className="permission-check-item">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(roleForm.permissions[idx])}
+                        onChange={() => toggleRolePermission(idx)}
+                      />
+                      <span>{perm}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <footer>
+                <button type="button" onClick={() => setRoleModalMode(null)}>取消</button>
+                <button className="primary-action" type="submit" disabled={savingRole}>
+                  {savingRole ? "正在保存…" : roleModalMode === "create" ? "创建角色" : "保存权限"}
                 </button>
               </footer>
             </form>

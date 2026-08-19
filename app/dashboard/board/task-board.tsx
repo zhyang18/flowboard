@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CalendarClock,
   CalendarRange,
   CheckCircle2,
@@ -10,6 +13,7 @@ import {
   Clock3,
   Edit3,
   GripVertical,
+  ListFilter,
   Plus,
   Search,
   ShieldCheck,
@@ -250,6 +254,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [assigneeId, setAssigneeId] = useState("");
   const [testerId, setTesterId] = useState("");
   const [sprintId, setSprintId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sortField, setSortField] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = usePersistentViewMode(
     "flowboard:tasks:view-mode",
@@ -287,6 +294,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     if (assigneeId) params.set("assigneeId", assigneeId);
     if (testerId) params.set("testerId", testerId);
     if (sprintId) params.set("sprintId", sprintId);
+    if (statusFilter) params.set("status", statusFilter);
     if (initialTaskId) params.set("taskId", initialTaskId);
     if (query.trim()) params.set("query", query.trim());
     try {
@@ -318,7 +326,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     } finally {
       setLoading(false);
     }
-  }, [assigneeId, initialTaskId, projectId, query, sprintId, testerId]);
+  }, [assigneeId, initialTaskId, projectId, query, sprintId, statusFilter, testerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
@@ -349,6 +357,41 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     const overdue = tasks.filter((task) => task.overdue).length;
     return { estimate, actual, overdue };
   }, [tasks]);
+
+  const sortedTasks = useMemo(() => {
+    if (!sortField) return tasks;
+    return [...tasks].sort((a, b) => {
+      let result = 0;
+      if (sortField === "task") {
+        result = a.title.localeCompare(b.title, "zh-CN");
+        if (result === 0) {
+          const priorityRank = { urgent: 4, high: 3, medium: 2, low: 1 };
+          result = (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0);
+        }
+      } else if (sortField === "project") {
+        result = a.projectName.localeCompare(b.projectName, "zh-CN");
+        if (result === 0) {
+          result = (a.sprintName || "").localeCompare(b.sprintName || "", "zh-CN");
+        }
+      } else if (sortField === "status") {
+        const statusRank = { backlog: 0, todo: 1, in_progress: 2, review: 3, done: 4 };
+        result = (statusRank[a.status] ?? 0) - (statusRank[b.status] ?? 0);
+      } else if (sortField === "assignee") {
+        result = (a.assigneeName || "zzz").localeCompare(b.assigneeName || "zzz", "zh-CN");
+      } else if (sortField === "dueDate") {
+        const aTime = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const bTime = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        result = aTime - bTime;
+      } else if (sortField === "hours") {
+        result = a.estimateHours - b.estimateHours;
+        if (result === 0) {
+          result = a.actualHours - b.actualHours;
+        }
+      }
+      return sortOrder === "asc" ? result : -result;
+    });
+  }, [tasks, sortField, sortOrder]);
+
   const {
     page,
     pageSize,
@@ -356,7 +399,40 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     setPage,
     changePageSize,
     resetPage,
-  } = useClientPagination(tasks);
+  } = useClientPagination(sortedTasks);
+
+  /**
+   * 触发任务列表表头排序。
+   *
+   * @param field 目标排序字段名称。
+   * @return 无返回值。
+   */
+  function handleSort(field: string) {
+    if (sortField === field) {
+      setSortOrder((current) => (current === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+    resetPage();
+  }
+
+  /**
+   * 渲染任务列表表头排序指示图标。
+   *
+   * @param field 列对应排序字段。
+   * @return 排序指示图标元素。
+   */
+  function renderSortIcon(field: string) {
+    if (sortField !== field) {
+      return <ArrowUpDown size={13} className="sort-icon inactive" />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp size={13} className="sort-icon active" />
+    ) : (
+      <ArrowDown size={13} className="sort-icon active" />
+    );
+  }
 
   /**
    * 在可写项目中打开新建任务表单。
@@ -758,6 +834,20 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           </select>
           <ChevronDown size={14} />
         </label>
+        <label className="module-select">
+          <ListFilter size={14} />
+          <select value={statusFilter} onChange={(event) => {
+            setStatusFilter(event.target.value);
+            resetPage();
+          }}>
+            <option value="">全部状态</option>
+            <option value="todo">待处理 (待办)</option>
+            <option value="in_progress">进行中 (开发中)</option>
+            <option value="review">待测试 (待验收)</option>
+            <option value="done">已完成</option>
+          </select>
+          <ChevronDown size={14} />
+        </label>
         <div className="toolbar-view-options">
           <span className="toolbar-result">显示 {tasks.length} 项任务</span>
           <ViewModeToggle
@@ -902,13 +992,67 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           <table className="entity-table task-entity-table">
             <thead>
               <tr>
-                <th>任务</th>
-                <th>项目 / 迭代</th>
-                <th>状态</th>
-                <th>负责人</th>
-                <th>截止 / 完成</th>
-                <th>工时</th>
-                <th>操作</th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("task")}
+                  title="点击按任务标题/优先级排序"
+                >
+                  <div className="th-content">
+                    <span>任务</span>
+                    {renderSortIcon("task")}
+                  </div>
+                </th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("project")}
+                  title="点击按所属项目/迭代排序"
+                >
+                  <div className="th-content">
+                    <span>项目 / 迭代</span>
+                    {renderSortIcon("project")}
+                  </div>
+                </th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("status")}
+                  title="点击按任务状态排序"
+                >
+                  <div className="th-content">
+                    <span>状态</span>
+                    {renderSortIcon("status")}
+                  </div>
+                </th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("assignee")}
+                  title="点击按负责人排序"
+                >
+                  <div className="th-content">
+                    <span>负责人</span>
+                    {renderSortIcon("assignee")}
+                  </div>
+                </th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("dueDate")}
+                  title="点击按截止时间/完成时间排序"
+                >
+                  <div className="th-content">
+                    <span>截止 / 完成</span>
+                    {renderSortIcon("dueDate")}
+                  </div>
+                </th>
+                <th
+                  className="sortable-th"
+                  onClick={() => handleSort("hours")}
+                  title="点击按预估/实际工时排序"
+                >
+                  <div className="th-content">
+                    <span>工时</span>
+                    {renderSortIcon("hours")}
+                  </div>
+                </th>
+                <th className="actions-column">操作</th>
               </tr>
             </thead>
             <tbody>

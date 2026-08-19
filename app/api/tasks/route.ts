@@ -77,6 +77,7 @@ export async function GET(request: Request) {
   const assigneeId = searchParams.get("assigneeId") ?? "";
   const testerId = searchParams.get("testerId") ?? "";
   const sprintId = searchParams.get("sprintId") ?? "";
+  const status = searchParams.get("status") ?? "";
   const requestedTaskId = searchParams.get("taskId");
   const taskId = uuidValue(requestedTaskId);
   const query = searchParams.get("query")?.trim().slice(0, 80) ?? "";
@@ -88,6 +89,7 @@ export async function GET(request: Request) {
   if (projectId) conditions.push(eq(tasks.projectId, projectId));
   if (assigneeId) conditions.push(eq(tasks.assigneeId, assigneeId));
   if (testerId) conditions.push(eq(tasks.testerId, testerId));
+  if (isTaskStatus(status)) conditions.push(eq(tasks.status, status));
   if (sprintId === "unplanned") conditions.push(isNull(tasks.sprintId));
   else if (sprintId) conditions.push(eq(tasks.sprintId, sprintId));
   if (taskId) conditions.push(eq(tasks.id, taskId));

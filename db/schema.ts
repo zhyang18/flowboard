@@ -477,6 +477,39 @@ export const taskComments = pgTable(
   ],
 );
 
+/**
+ * 角色与权限配置表，用于动态维护组织角色及其功能权限矩阵
+ */
+export const customRoles = pgTable(
+  "custom_roles",
+  {
+    /** 角色唯一标识符 (内置角色为固定枚举字符串，自定义角色为 uuid 或 key) */
+    id: text("id").primaryKey(),
+    /** 角色显示名称 */
+    name: text("name").notNull(),
+    /** 角色职责描述 */
+    description: text("description").notNull().default(""),
+    /** 角色展示的主题色调 (如 violet, blue, green, orange, gray, rose) */
+    tone: text("tone").notNull().default("blue"),
+    /** 功能权限布尔数组配置 (对应项目设置、用户团队、任务管理、工时审批、报表导出、系统审计) */
+    permissions: jsonb("permissions").$type<boolean[]>().notNull(),
+    /** 是否为系统内置角色 (内置角色不可被删除) */
+    isSystem: boolean("is_system").notNull().default(false),
+    /** 角色创建时间 */
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** 角色最后更新时间 */
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("custom_roles_created_at_idx").on(table.createdAt),
+    index("custom_roles_is_system_idx").on(table.isSystem),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -501,3 +534,5 @@ export type NewWorkLog = typeof workLogs.$inferInsert;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type TaskComment = typeof taskComments.$inferSelect;
 export type NewTaskComment = typeof taskComments.$inferInsert;
+export type CustomRole = typeof customRoles.$inferSelect;
+export type NewCustomRole = typeof customRoles.$inferInsert;

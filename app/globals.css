@@ -2265,6 +2265,197 @@ textarea {
   color: var(--green-700);
 }
 
+.tone-orange::before {
+  background: #e37318;
+}
+
+.tone-orange header span {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.tone-gray::before {
+  background: #64748b;
+}
+
+.tone-gray header span {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tone-rose::before {
+  background: #e11d48;
+}
+
+.tone-rose header span {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.tone-cyan::before {
+  background: #0891b2;
+}
+
+.tone-cyan header span {
+  background: #cffafe;
+  color: #0e7490;
+}
+
+.role-card-body {
+  margin-top: 10px;
+}
+
+.role-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.role-title-row h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.system-role-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: var(--ink-500);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.role-card-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.role-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong, #cbd5e1);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink-700);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.role-action-button:hover {
+  border-color: var(--blue-500);
+  color: var(--blue-600);
+  background: #f8fafc;
+}
+
+.role-action-button.danger:hover {
+  border-color: #ef4444;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.role-view-only-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-400);
+  font-size: 11px;
+}
+
+.role-permissions-config {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.role-permissions-config h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-800);
+}
+
+.permissions-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.permission-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-800);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.permission-check-item:hover {
+  border-color: var(--blue-400);
+  background: #fff;
+}
+
+.permission-check-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sortable-th:hover {
+  background-color: #f1f5f9;
+}
+
+.th-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sort-icon {
+  flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.sort-icon.inactive {
+  opacity: 0.35;
+  color: var(--ink-400, #94a3b8);
+}
+
+.sortable-th:hover .sort-icon.inactive {
+  opacity: 0.75;
+}
+
+.sort-icon.active {
+  opacity: 1;
+  color: var(--blue-600, #2563eb);
+}
+
 .permission-matrix > header {
   display: flex;
   align-items: center;
