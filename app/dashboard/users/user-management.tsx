@@ -36,7 +36,7 @@ import {
   permissionRows,
   type RoleDefinition,
 } from "@/lib/roles";
-import { roleLabels, statusLabels } from "@/lib/users";
+import { useTranslation } from "@/lib/i18n";
 import { useDashboardDialog } from "../dashboard-dialog-provider";
 import PaginationControls from "../pagination-controls";
 
@@ -110,12 +110,12 @@ const emptyRoleForm: RoleForm = {
 };
 
 const toneOptions = [
-  { value: "violet", label: "紫罗兰", color: "#7456ca" },
-  { value: "blue", label: "科技蓝", color: "#2f7df6" },
-  { value: "green", label: "翡翠绿", color: "#21a279" },
-  { value: "orange", label: "琥珀橙", color: "#e37318" },
-  { value: "gray", label: "经典灰", color: "#64748b" },
-  { value: "rose", label: "玫瑰红", color: "#e11d48" },
+  { value: "violet", labelZh: "紫罗兰", labelEn: "Violet", color: "#7456ca" },
+  { value: "blue", labelZh: "科技蓝", labelEn: "Tech Blue", color: "#2f7df6" },
+  { value: "green", labelZh: "翡翠绿", labelEn: "Emerald Green", color: "#21a279" },
+  { value: "orange", labelZh: "琥珀橙", labelEn: "Amber Orange", color: "#e37318" },
+  { value: "gray", labelZh: "经典灰", labelEn: "Classic Gray", color: "#64748b" },
+  { value: "rose", labelZh: "玫瑰红", labelEn: "Rose Red", color: "#e11d48" },
 ];
 
 /**
@@ -124,24 +124,29 @@ const toneOptions = [
  * @param name 用户姓名。
  * @return 单字符头像文本。
  */
-function userInitials(name: string) {
-  return name.trim().slice(0, 1) || "用";
+function userInitials(name: string): string {
+  return name.trim().slice(0, 1) || "U";
 }
 
 /**
  * 格式化用户最后活跃时间。
  *
  * @param value ISO 时间或空值。
+ * @param locale 当前语言环境。
  * @return 相对时间或日期时间文本。
  */
-function formatLastSeen(value: string | null) {
-  if (!value) return "从未登录";
+function formatLastSeen(value: string | null, locale: string): string {
+  if (!value) return locale === "zh" ? "从未登录" : "Never logged in";
   const diff = Math.max(0, Date.now() - new Date(value).getTime());
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "刚刚在线";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 小时前`;
-  return new Intl.DateTimeFormat("zh-CN", {
+  if (minutes < 1) return locale === "zh" ? "刚刚在线" : "Just now";
+  if (minutes < 60) return locale === "zh" ? `${minutes} 分钟前` : `${minutes}m ago`;
+  if (minutes < 24 * 60) {
+    return locale === "zh"
+      ? `${Math.floor(minutes / 60)} 小时前`
+      : `${Math.floor(minutes / 60)}h ago`;
+  }
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -150,10 +155,11 @@ function formatLastSeen(value: string | null) {
 }
 
 /**
- * 渲染用户分页、角色矩阵和账号维护表单。
+ * 渲染支持中英文国际化的用户分页、角色矩阵与账号维护表单。
  *
- * @param currentUserId 当前登录用户 ID。
- * @param currentUserRole 当前登录用户角色。
+ * @param props 组件属性。
+ * @param props.currentUserId 当前登录用户 ID。
+ * @param props.currentUserRole 当前登录用户角色。
  * @return 用户管理组件。
  */
 export default function UserManagement({
@@ -163,6 +169,7 @@ export default function UserManagement({
   currentUserId: string;
   currentUserRole: UserRole;
 }) {
+  const { t, locale, getRoleLabel, getUserStatusLabel } = useTranslation();
   const { confirm } = useDashboardDialog();
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -191,9 +198,10 @@ export default function UserManagement({
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  // 角色管理相关状态
   const [roles, setRoles] = useState<RoleDefinition[]>(defaultSystemRoles);
-  const [roleModalMode, setRoleModalMode] = useState<"create" | "edit" | null>(null);
+  const [roleModalMode, setRoleModalMode] = useState<"create" | "edit" | null>(
+    null,
+  );
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [roleForm, setRoleForm] = useState<RoleForm>(emptyRoleForm);
   const [savingRole, setSavingRole] = useState(false);
@@ -221,7 +229,7 @@ export default function UserManagement({
         cache: "no-store",
       });
       const result = (await response.json()) as UsersResponse;
-      if (!response.ok) throw new Error(result.error ?? "用户列表加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
 
       const lastPage = Math.max(
         1,
@@ -247,12 +255,12 @@ export default function UserManagement({
       );
     } catch (loadError) {
       setError(
-        loadError instanceof Error ? loadError.message : "用户列表加载失败。",
+        loadError instanceof Error ? loadError.message : t("common.error"),
       );
     } finally {
       setLoading(false);
     }
-  }, [department, page, pageSize, query, sortBy, sortOrder, status]);
+  }, [department, page, pageSize, query, sortBy, sortOrder, status, t]);
 
   /**
    * 从服务端加载全部角色定义和关联成员统计。
@@ -262,15 +270,18 @@ export default function UserManagement({
   const loadRoles = useCallback(async () => {
     try {
       const response = await fetch("/api/roles", { cache: "no-store" });
-      const result = (await response.json()) as { data?: RoleDefinition[]; error?: string };
-      if (!response.ok) throw new Error(result.error ?? "加载角色列表失败。");
+      const result = (await response.json()) as {
+        data?: RoleDefinition[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       if (result.data) {
         setRoles(result.data);
       }
-    } catch (roleError) {
-      console.error("加载角色列表失败", roleError);
+    } catch {
+      // 忽略非关键错误
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(loadUsers, query ? 280 : 0);
@@ -298,7 +309,6 @@ export default function UserManagement({
    * 触发用户列表表头排序。
    *
    * @param field 目标排序字段名称。
-   * @return 无返回值。
    */
   function handleSort(field: string) {
     if (sortBy === field) {
@@ -331,7 +341,6 @@ export default function UserManagement({
    * 修改用户列表每页数量并返回第一页。
    *
    * @param nextPageSize 新的每页数量。
-   * @return 无返回值。
    */
   function changePageSize(nextPageSize: number) {
     setPageSize(nextPageSize);
@@ -340,8 +349,6 @@ export default function UserManagement({
 
   /**
    * 打开新建用户表单。
-   *
-   * @return 无返回值。
    */
   function openCreate() {
     setEditingId(null);
@@ -353,7 +360,6 @@ export default function UserManagement({
    * 使用现有用户资料打开编辑表单。
    *
    * @param user 待编辑用户。
-   * @return 无返回值。
    */
   function openEdit(user: ManagedUser) {
     setEditingId(user.id);
@@ -396,14 +402,16 @@ export default function UserManagement({
         data?: ManagedUser;
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "保存失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
 
       setModalMode(null);
-      setNotice(modalMode === "edit" ? "用户资料已更新" : "新用户已创建");
+      setNotice(t("users.saveSuccess"));
       await loadUsers();
       if (result.data) setSelectedUserId(result.data.id);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "保存失败。");
+      setError(
+        saveError instanceof Error ? saveError.message : t("common.error"),
+      );
     } finally {
       setSaving(false);
     }
@@ -420,7 +428,7 @@ export default function UserManagement({
       user.status === "disabled" ? "active" : "disabled";
 
     if (user.id === currentUserId) {
-      setNotice("不能停用当前登录账号");
+      setNotice(t("users.cannotDisableSelf"));
       return;
     }
 
@@ -431,12 +439,18 @@ export default function UserManagement({
         body: JSON.stringify({ status: nextStatus }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "状态更新失败。");
-      setNotice(nextStatus === "disabled" ? "账号已停用" : "账号已恢复");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(
+        nextStatus === "disabled"
+          ? t("users.disabledSuccess")
+          : t("users.enabledSuccess"),
+      );
       await loadUsers();
     } catch (statusError) {
       setNotice(
-        statusError instanceof Error ? statusError.message : "状态更新失败。",
+        statusError instanceof Error
+          ? statusError.message
+          : t("common.error"),
       );
     }
   }
@@ -449,9 +463,9 @@ export default function UserManagement({
    */
   async function deleteUser(user: ManagedUser) {
     const confirmed = await confirm({
-      title: "删除用户",
-      message: `确定删除“${user.name}”吗？此操作会移除该账号及其登录会话，且无法撤销。`,
-      confirmLabel: "删除用户",
+      title: t("users.deleteConfirmTitle"),
+      message: t("users.deleteConfirmMsg", { name: user.name }),
+      confirmLabel: t("common.delete"),
       tone: "danger",
     });
     if (!confirmed) return;
@@ -461,12 +475,14 @@ export default function UserManagement({
         method: "DELETE",
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "删除失败。");
-      setNotice("用户已删除");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("users.deleteSuccess"));
       await loadUsers();
     } catch (deleteError) {
       setNotice(
-        deleteError instanceof Error ? deleteError.message : "删除失败。",
+        deleteError instanceof Error
+          ? deleteError.message
+          : t("common.error"),
       );
     }
   }
@@ -475,7 +491,6 @@ export default function UserManagement({
    * 切换当前页用户的批量选择状态。
    *
    * @param id 用户 ID。
-   * @return 无返回值。
    */
   function toggleSelected(id: string) {
     setSelectedIds((current) =>
@@ -487,8 +502,6 @@ export default function UserManagement({
 
   /**
    * 打开新建角色模态弹窗。
-   *
-   * @return 无返回值。
    */
   function openCreateRole() {
     setEditingRoleId(null);
@@ -505,7 +518,6 @@ export default function UserManagement({
    * 打开编辑角色模态弹窗。
    *
    * @param role 待编辑的角色对象。
-   * @return 无返回值。
    */
   function openEditRole(role: RoleDefinition) {
     setEditingRoleId(role.id);
@@ -540,13 +552,15 @@ export default function UserManagement({
         },
       );
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "保存角色失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
 
       setRoleModalMode(null);
-      setNotice(isEdit ? "角色配置已更新" : "新角色已创建");
+      setNotice(isEdit ? t("common.success") : t("common.success"));
       await loadRoles();
     } catch (saveRoleErr) {
-      setError(saveRoleErr instanceof Error ? saveRoleErr.message : "保存角色失败。");
+      setError(
+        saveRoleErr instanceof Error ? saveRoleErr.message : t("common.error"),
+      );
     } finally {
       setSavingRole(false);
     }
@@ -560,13 +574,13 @@ export default function UserManagement({
    */
   async function deleteRole(role: RoleDefinition) {
     if (role.isSystem) {
-      setNotice("系统内置角色不可删除");
+      setNotice(t("common.error"));
       return;
     }
     const confirmed = await confirm({
-      title: "删除角色",
-      message: `确定删除角色“${role.name}”吗？此操作无法撤销。`,
-      confirmLabel: "删除角色",
+      title: t("common.delete"),
+      message: `${t("common.delete")} "${role.name}"?`,
+      confirmLabel: t("common.delete"),
       tone: "danger",
     });
     if (!confirmed) return;
@@ -576,12 +590,14 @@ export default function UserManagement({
         method: "DELETE",
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "删除角色失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
 
-      setNotice("角色已删除");
+      setNotice(t("common.success"));
       await loadRoles();
     } catch (delRoleErr) {
-      setNotice(delRoleErr instanceof Error ? delRoleErr.message : "删除角色失败。");
+      setNotice(
+        delRoleErr instanceof Error ? delRoleErr.message : t("common.error"),
+      );
     }
   }
 
@@ -589,7 +605,6 @@ export default function UserManagement({
    * 切换角色表单中特定权限的勾选状态。
    *
    * @param index 权限在 permissionRows 中的索引。
-   * @return 无返回值。
    */
   function toggleRolePermission(index: number) {
     setRoleForm((prev) => {
@@ -603,45 +618,77 @@ export default function UserManagement({
     <div className="user-management-page">
       <section className="user-page-heading">
         <div>
-          <span className="eyebrow">组织成员</span>
-          <h2>用户管理</h2>
-          <p>集中维护成员资料、团队归属、账号状态与访问权限。</p>
+          <span className="eyebrow">{t("users.eyebrow")}</span>
+          <h2>{t("users.heading")}</h2>
+          <p>{t("users.description")}</p>
         </div>
         {tab === "users" ? (
-          <button className="primary-action" type="button" onClick={openCreate}>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={openCreate}
+          >
             <Plus size={17} />
-            <span>新建用户</span>
+            <span>{t("users.newUser")}</span>
           </button>
         ) : (
           currentUserRole === "super_admin" && (
-            <button className="primary-action" type="button" onClick={openCreateRole}>
+            <button
+              className="primary-action"
+              type="button"
+              onClick={openCreateRole}
+            >
               <Plus size={17} />
-              <span>新增角色</span>
+              <span>{t("users.roles.newRole")}</span>
             </button>
           )
         )}
       </section>
 
-      <section className="user-stat-grid" aria-label="用户统计">
+      <section className="user-stat-grid" aria-label={t("users.heading")}>
         <article>
-          <span className="stat-icon blue"><Users size={20} /></span>
-          <div><small>全部用户</small><b>{stats.total}</b><em>组织成员总数</em></div>
+          <span className="stat-icon blue">
+            <Users size={20} />
+          </span>
+          <div>
+            <small>{t("users.stats.total")}</small>
+            <b>{stats.total}</b>
+            <em>{t("users.itemUnit")}</em>
+          </div>
         </article>
         <article>
-          <span className="stat-icon green"><UserCheck size={20} /></span>
-          <div><small>正常账号</small><b>{stats.active}</b><em>可正常访问系统</em></div>
+          <span className="stat-icon green">
+            <UserCheck size={20} />
+          </span>
+          <div>
+            <small>{t("userStatuses.active")}</small>
+            <b>{stats.active}</b>
+            <em>{t("users.activeDesc")}</em>
+          </div>
         </article>
         <article>
-          <span className="stat-icon orange"><Clock3 size={20} /></span>
-          <div><small>待激活</small><b>{stats.invited}</b><em>等待接受邀请</em></div>
+          <span className="stat-icon orange">
+            <Clock3 size={20} />
+          </span>
+          <div>
+            <small>{t("userStatuses.invited")}</small>
+            <b>{stats.invited}</b>
+            <em>{t("users.invitedDesc")}</em>
+          </div>
         </article>
         <article>
-          <span className="stat-icon violet"><ShieldCheck size={20} /></span>
-          <div><small>管理员</small><b>{stats.admins}</b><em>拥有管理权限</em></div>
+          <span className="stat-icon violet">
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <small>{t("roles.project_admin")}</small>
+            <b>{stats.admins}</b>
+            <em>{t("users.adminDesc")}</em>
+          </div>
         </article>
       </section>
 
-      <div className="management-tabs" role="tablist" aria-label="用户管理视图">
+      <div className="management-tabs" role="tablist" aria-label="Tabs">
         <button
           className={tab === "users" ? "active" : ""}
           role="tab"
@@ -649,7 +696,7 @@ export default function UserManagement({
           type="button"
           onClick={() => setTab("users")}
         >
-          <Users size={16} /> 用户列表 <span>{stats.total}</span>
+          <Users size={16} /> {t("users.tabs.userList")} <span>{stats.total}</span>
         </button>
         <button
           className={tab === "roles" ? "active" : ""}
@@ -658,28 +705,28 @@ export default function UserManagement({
           type="button"
           onClick={() => setTab("roles")}
         >
-          <KeyRound size={16} /> 角色与权限 <span>{roles.length}</span>
+          <KeyRound size={16} /> {t("users.tabs.rolesPermissions")}{" "}
+          <span>{roles.length}</span>
         </button>
       </div>
 
       {tab === "users" ? (
         <>
-          <section className="user-toolbar" aria-label="筛选用户">
+          <section className="user-toolbar" aria-label={t("users.tabs.userList")}>
             <label className="search-control">
               <Search size={17} aria-hidden="true" />
-              <span className="sr-only">搜索用户</span>
               <input
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setPage(1);
                 }}
-                placeholder="搜索姓名、邮箱或团队"
+                placeholder={t("users.searchPlaceholder")}
               />
               {query && (
                 <button
                   type="button"
-                  aria-label="清空搜索"
+                  aria-label={t("common.reset")}
                   onClick={() => setQuery("")}
                 >
                   <X size={14} />
@@ -687,7 +734,6 @@ export default function UserManagement({
               )}
             </label>
             <label>
-              <span className="sr-only">按部门筛选</span>
               <select
                 value={department}
                 onChange={(event) => {
@@ -695,14 +741,15 @@ export default function UserManagement({
                   setPage(1);
                 }}
               >
-                <option value="">全部部门</option>
+                <option value="">{t("users.allDepartments")}</option>
                 {departments.map((item) => (
-                  <option key={item} value={item}>{item}</option>
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
                 ))}
               </select>
             </label>
             <label>
-              <span className="sr-only">按账号状态筛选</span>
               <select
                 value={status}
                 onChange={(event) => {
@@ -710,28 +757,37 @@ export default function UserManagement({
                   setPage(1);
                 }}
               >
-                <option value="">全部状态</option>
-                <option value="active">正常</option>
-                <option value="disabled">已停用</option>
-                <option value="invited">待激活</option>
+                <option value="">{t("projects.allStatuses")}</option>
+                <option value="active">{t("userStatuses.active")}</option>
+                <option value="disabled">{t("userStatuses.disabled")}</option>
+                <option value="invited">{t("userStatuses.invited")}</option>
               </select>
             </label>
             <button
               className="refresh-button"
               type="button"
-              aria-label="刷新用户列表"
+              aria-label={t("reports.refreshAria")}
               onClick={loadUsers}
               disabled={loading}
             >
               <RefreshCw size={16} className={loading ? "spin" : ""} />
             </button>
-            <span className="result-count">共 {total} 位成员</span>
+            <span className="result-count">
+              {t("pagination.totalSummary", {
+                total,
+                label: t("users.itemUnit"),
+              })}
+            </span>
           </section>
 
           {selectedIds.length > 0 && (
             <div className="batch-bar">
-              <span>已选择 <b>{selectedIds.length}</b> 位成员</span>
-              <button type="button" onClick={() => setSelectedIds([])}>取消选择</button>
+              <span>
+                {t("users.selectedCount", { count: selectedIds.length })}
+              </span>
+              <button type="button" onClick={() => setSelectedIds([])}>
+                {t("common.cancel")}
+              </button>
             </div>
           )}
 
@@ -739,7 +795,9 @@ export default function UserManagement({
             <div className="page-error" role="alert">
               <AlertCircle size={18} />
               <span>{error}</span>
-              <button type="button" onClick={loadUsers}>重新加载</button>
+              <button type="button" onClick={loadUsers}>
+                {t("common.reset")}
+              </button>
             </div>
           )}
 
@@ -752,11 +810,16 @@ export default function UserManagement({
                       <th className="checkbox-column">
                         <input
                           type="checkbox"
-                          aria-label="选择当前页全部用户"
-                          checked={users.length > 0 && selectedIds.length === users.length}
+                          aria-label="Select all users"
+                          checked={
+                            users.length > 0 &&
+                            selectedIds.length === users.length
+                          }
                           onChange={(event) =>
                             setSelectedIds(
-                              event.target.checked ? users.map((user) => user.id) : [],
+                              event.target.checked
+                                ? users.map((user) => user.id)
+                                : [],
                             )
                           }
                         />
@@ -764,67 +827,66 @@ export default function UserManagement({
                       <th
                         className="sortable-th"
                         onClick={() => handleSort("name")}
-                        title="点击按姓名排序"
                       >
                         <div className="th-content">
-                          <span>用户</span>
+                          <span>{t("common.member")}</span>
                           {renderSortIcon("name")}
                         </div>
                       </th>
                       <th
                         className="sortable-th"
                         onClick={() => handleSort("department")}
-                        title="点击按部门排序"
                       >
                         <div className="th-content">
-                          <span>部门 / 团队</span>
+                          <span>{t("users.departmentLabel")}</span>
                           {renderSortIcon("department")}
                         </div>
                       </th>
                       <th
                         className="sortable-th"
                         onClick={() => handleSort("role")}
-                        title="点击按角色排序"
                       >
                         <div className="th-content">
-                          <span>角色</span>
+                          <span>{t("users.roleLabel")}</span>
                           {renderSortIcon("role")}
                         </div>
                       </th>
                       <th
                         className="sortable-th"
                         onClick={() => handleSort("status")}
-                        title="点击按账号状态排序"
                       >
                         <div className="th-content">
-                          <span>账号状态</span>
+                          <span>{t("common.status")}</span>
                           {renderSortIcon("status")}
                         </div>
                       </th>
                       <th
                         className="sortable-th"
                         onClick={() => handleSort("lastSeenAt")}
-                        title="点击按最后活跃时间排序"
                       >
                         <div className="th-content">
-                          <span>最后活跃</span>
+                          <span>{t("users.lastSeenLabel")}</span>
                           {renderSortIcon("lastSeenAt")}
                         </div>
                       </th>
-                      <th className="actions-column">操作</th>
+                      <th className="actions-column">{t("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading && users.length === 0
                       ? Array.from({ length: 6 }).map((_, index) => (
                           <tr className="skeleton-row" key={index}>
-                            <td colSpan={7}><span /></td>
+                            <td colSpan={7}>
+                              <span />
+                            </td>
                           </tr>
                         ))
                       : users.map((user) => (
                           <tr
                             key={user.id}
-                            className={selectedUser?.id === user.id ? "selected" : ""}
+                            className={
+                              selectedUser?.id === user.id ? "selected" : ""
+                            }
                             onClick={() => setSelectedUserId(user.id)}
                           >
                             <td
@@ -833,14 +895,16 @@ export default function UserManagement({
                             >
                               <input
                                 type="checkbox"
-                                aria-label={`选择 ${user.name}`}
+                                aria-label={`Select ${user.name}`}
                                 checked={selectedIds.includes(user.id)}
                                 onChange={() => toggleSelected(user.id)}
                               />
                             </td>
                             <td>
                               <div className="user-cell">
-                                <span className="avatar avatar-soft">{userInitials(user.name)}</span>
+                                <span className="avatar avatar-soft">
+                                  {userInitials(user.name)}
+                                </span>
                                 <div>
                                   <b>{user.name}</b>
                                   <small>{user.email}</small>
@@ -856,40 +920,64 @@ export default function UserManagement({
                             </td>
                             <td>
                               <span className={`role-chip role-${user.role}`}>
-                                {roleLabels[user.role] ?? user.role}
+                                {getRoleLabel(user.role)}
                               </span>
                             </td>
                             <td>
-                              <span className={`status-chip status-${user.status}`}>
-                                <i /> {statusLabels[user.status]}
+                              <span
+                                className={`status-chip status-${user.status}`}
+                              >
+                                <i /> {getUserStatusLabel(user.status)}
                               </span>
                             </td>
-                            <td><span className="last-seen">{formatLastSeen(user.lastSeenAt)}</span></td>
+                            <td>
+                              <span className="last-seen">
+                                {formatLastSeen(user.lastSeenAt, locale)}
+                              </span>
+                            </td>
                             <td
                               className="row-actions"
                               onClick={(event) => event.stopPropagation()}
                             >
-                              {(currentUserRole === "super_admin" || !["super_admin", "project_admin"].includes(user.role)) && (
+                              {(currentUserRole === "super_admin" ||
+                                !["super_admin", "project_admin"].includes(
+                                  user.role,
+                                )) && (
                                 <>
                                   <button
                                     type="button"
-                                    title="编辑用户"
-                                    aria-label={`编辑 ${user.name}`}
+                                    title={t("common.edit")}
+                                    aria-label={`${t("common.edit")} ${user.name}`}
                                     onClick={() => openEdit(user)}
                                   >
                                     <Edit3 size={15} />
                                   </button>
                                   <button
                                     type="button"
-                                    title={user.status === "disabled" ? "恢复账号" : "停用账号"}
-                                    aria-label={user.status === "disabled" ? `恢复 ${user.name}` : `停用 ${user.name}`}
+                                    title={
+                                      user.status === "disabled"
+                                        ? t("users.enableAccount")
+                                        : t("users.disableAccount")
+                                    }
+                                    aria-label={
+                                      user.status === "disabled"
+                                        ? `${t("users.enableAccount")} ${user.name}`
+                                        : `${t("users.disableAccount")} ${user.name}`
+                                    }
                                     onClick={() => toggleUserStatus(user)}
                                   >
-                                    {user.status === "disabled" ? <UserCheck size={15} /> : <UserX size={15} />}
+                                    {user.status === "disabled" ? (
+                                      <UserCheck size={15} />
+                                    ) : (
+                                      <UserX size={15} />
+                                    )}
                                   </button>
                                 </>
                               )}
-                              <button type="button" aria-label="更多操作">
+                              <button
+                                type="button"
+                                aria-label={t("common.actions")}
+                              >
                                 <MoreHorizontal size={16} />
                               </button>
                             </td>
@@ -900,8 +988,8 @@ export default function UserManagement({
                 {!loading && users.length === 0 && (
                   <div className="empty-users">
                     <CircleUserRound size={36} />
-                    <b>没有找到符合条件的成员</b>
-                    <p>尝试调整搜索条件，或新增一位组织成员。</p>
+                    <b>{t("projects.noMatches")}</b>
+                    <p>{t("projects.createFirstProject")}</p>
                   </div>
                 )}
               </div>
@@ -909,7 +997,7 @@ export default function UserManagement({
                 page={page}
                 pageSize={pageSize}
                 total={total}
-                itemLabel="位成员"
+                itemLabel={t("users.itemUnit")}
                 onPageChange={setPage}
                 onPageSizeChange={changePageSize}
               />
@@ -918,60 +1006,120 @@ export default function UserManagement({
             {selectedUser && (
               <aside className="user-detail-card">
                 <header>
-                  <span className="avatar detail-avatar">{userInitials(selectedUser.name)}</span>
+                  <span className="avatar detail-avatar">
+                    {userInitials(selectedUser.name)}
+                  </span>
                   <div>
                     <h3>{selectedUser.name}</h3>
                     <p>{selectedUser.email}</p>
                   </div>
-                  <span className={`status-chip status-${selectedUser.status}`}>
-                    <i /> {statusLabels[selectedUser.status]}
+                  <span
+                    className={`status-chip status-${selectedUser.status}`}
+                  >
+                    <i /> {getUserStatusLabel(selectedUser.status)}
                   </span>
                 </header>
-                {(currentUserRole === "super_admin" || !["super_admin", "project_admin"].includes(selectedUser.role)) && <div className="detail-actions">
-                  <button className="detail-primary" type="button" onClick={() => openEdit(selectedUser)}>
-                    <Edit3 size={15} /> 编辑资料
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleUserStatus(selectedUser)}
-                    disabled={selectedUser.id === currentUserId}
-                  >
-                    <UserX size={15} />
-                    {selectedUser.status === "disabled" ? "恢复" : "停用"}
-                  </button>
-                </div>}
+                {(currentUserRole === "super_admin" ||
+                  !["super_admin", "project_admin"].includes(
+                    selectedUser.role,
+                  )) && (
+                  <div className="detail-actions">
+                    <button
+                      className="detail-primary"
+                      type="button"
+                      onClick={() => openEdit(selectedUser)}
+                    >
+                      <Edit3 size={15} /> {t("common.edit")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleUserStatus(selectedUser)}
+                      disabled={selectedUser.id === currentUserId}
+                    >
+                      <UserX size={15} />
+                      {selectedUser.status === "disabled"
+                        ? t("users.enableAccount")
+                        : t("users.disableAccount")}
+                    </button>
+                  </div>
+                )}
                 <dl className="user-facts">
-                  <div><dt>所属部门</dt><dd>{selectedUser.department}</dd></div>
-                  <div><dt>所属团队</dt><dd>{selectedUser.team}</dd></div>
-                  <div><dt>用户角色</dt><dd>{roleLabels[selectedUser.role] ?? selectedUser.role}</dd></div>
-                  <div><dt>手机号码</dt><dd>{selectedUser.phone || "未填写"}</dd></div>
-                  <div><dt>加入时间</dt><dd>{new Date(selectedUser.createdAt).toLocaleDateString("zh-CN")}</dd></div>
+                  <div>
+                    <dt>{t("users.departmentLabel")}</dt>
+                    <dd>{selectedUser.department}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("users.teamLabel")}</dt>
+                    <dd>{selectedUser.team}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("users.roleLabel")}</dt>
+                    <dd>{getRoleLabel(selectedUser.role)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("users.phoneLabel")}</dt>
+                    <dd>{selectedUser.phone || t("common.none")}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("users.createdAtLabel")}</dt>
+                    <dd>
+                      {new Date(selectedUser.createdAt).toLocaleDateString(
+                        locale === "zh" ? "zh-CN" : "en-US",
+                      )}
+                    </dd>
+                  </div>
                 </dl>
                 <section className="capacity-panel">
-                  <header><b>近 7 日工时利用率</b><span>{selectedUser.capacity}%</span></header>
-                  <div><i style={{ width: `${Math.min(100, selectedUser.capacity)}%` }} /></div>
-                  <p>参与 {selectedUser.projectCount} 个项目 · 最近 7 天已登记工时利用率</p>
+                  <header>
+                    <b>{t("reports.trendEyebrow")}</b>
+                    <span>{selectedUser.capacity}%</span>
+                  </header>
+                  <div>
+                    <i
+                      style={{
+                        width: `${Math.min(100, selectedUser.capacity)}%`,
+                      }}
+                    />
+                  </div>
+                  <p>
+                    {t("workbench.totalProjectsSuffix", {
+                      count: selectedUser.projectCount,
+                    })}
+                  </p>
                 </section>
                 <section className="recent-activity">
-                  <h4>账号概况</h4>
+                  <h4>{t("users.accountOverview")}</h4>
                   <div>
-                    <span><Mail size={14} /></span>
-                    <p><b>邮箱身份已登记</b><small>{selectedUser.email}</small></p>
+                    <span>
+                      <Mail size={14} />
+                    </span>
+                    <p>
+                      <b>{t("users.emailVerified")}</b>
+                      <small>{selectedUser.email}</small>
+                    </p>
                   </div>
                   <div>
-                    <span><Clock3 size={14} /></span>
-                    <p><b>最后活跃时间</b><small>{formatLastSeen(selectedUser.lastSeenAt)}</small></p>
+                    <span>
+                      <Clock3 size={14} />
+                    </span>
+                    <p>
+                      <b>{t("users.lastSeenLabel")}</b>
+                      <small>
+                        {formatLastSeen(selectedUser.lastSeenAt, locale)}
+                      </small>
+                    </p>
                   </div>
                 </section>
-                {currentUserRole === "super_admin" && selectedUser.id !== currentUserId && (
-                  <button
-                    className="delete-user-button"
-                    type="button"
-                    onClick={() => deleteUser(selectedUser)}
-                  >
-                    <Trash2 size={14} /> 删除此账号
-                  </button>
-                )}
+                {currentUserRole === "super_admin" &&
+                  selectedUser.id !== currentUserId && (
+                    <button
+                      className="delete-user-button"
+                      type="button"
+                      onClick={() => deleteUser(selectedUser)}
+                    >
+                      <Trash2 size={14} /> {t("common.delete")}
+                    </button>
+                  )}
               </aside>
             )}
           </section>
@@ -980,17 +1128,28 @@ export default function UserManagement({
         <section className="roles-view">
           <div className="role-card-grid">
             {roles.map((role) => (
-              <article className={`role-card tone-${role.tone}`} key={role.id}>
+              <article
+                className={`role-card tone-${role.tone}`}
+                key={role.id}
+              >
                 <header>
-                  <span><UserRoundCog size={18} /></span>
-                  <b>{role.userCount ?? 0} 人</b>
+                  <span>
+                    <UserRoundCog size={18} />
+                  </span>
+                  <b>
+                    {role.userCount ?? 0} {t("users.itemUnit")}
+                  </b>
                 </header>
                 <div className="role-card-body">
                   <div className="role-title-row">
                     <h3>{role.name}</h3>
-                    {role.isSystem && <span className="system-role-tag">系统预设</span>}
+                    {role.isSystem && (
+                      <span className="system-role-tag">
+                        {t("users.roles.systemPreset")}
+                      </span>
+                    )}
                   </div>
-                  <p>{role.description || "暂无描述"}</p>
+                  <p>{role.description || t("common.none")}</p>
                 </div>
                 <div className="role-card-footer">
                   {currentUserRole === "super_admin" ? (
@@ -999,26 +1158,26 @@ export default function UserManagement({
                         type="button"
                         className="role-action-button"
                         onClick={() => openEditRole(role)}
-                        title="编辑角色信息与权限"
+                        title={t("users.roles.editPermissions")}
                       >
                         <Edit3 size={13} />
-                        <span>编辑权限</span>
+                        <span>{t("users.roles.editPermissions")}</span>
                       </button>
                       {!role.isSystem && (
                         <button
                           type="button"
                           className="role-action-button danger"
                           onClick={() => deleteRole(role)}
-                          title="删除此角色"
+                          title={t("common.delete")}
                         >
                           <Trash2 size={13} />
-                          <span>删除</span>
+                          <span>{t("common.delete")}</span>
                         </button>
                       )}
                     </div>
                   ) : (
                     <span className="role-view-only-hint">
-                      <ShieldCheck size={13} /> 只读查看
+                      <ShieldCheck size={13} /> {t("roles.viewer")}
                     </span>
                   )}
                 </div>
@@ -1029,16 +1188,16 @@ export default function UserManagement({
           <article className="permission-matrix">
             <header>
               <div>
-                <span className="eyebrow">访问控制</span>
-                <h3>功能权限矩阵</h3>
+                <span className="eyebrow">{t("users.roles.matrixEyebrow")}</span>
+                <h3>{t("users.roles.matrixHeading")}</h3>
               </div>
-              <span>RBAC 角色访问控制模型</span>
+              <span>{t("users.roles.rbacModel")}</span>
             </header>
             <div>
               <table>
                 <thead>
                   <tr>
-                    <th>功能权限</th>
+                    <th>{t("users.roles.featurePermission")}</th>
                     {roles.map((role) => (
                       <th key={role.id}>{role.name}</th>
                     ))}
@@ -1049,11 +1208,23 @@ export default function UserManagement({
                     <tr key={permission}>
                       <td>{permission}</td>
                       {roles.map((role) => {
-                        const hasPermission = Boolean(role.permissions[rowIndex]);
+                        const hasPermission = Boolean(
+                          role.permissions[rowIndex],
+                        );
                         return (
                           <td key={role.id}>
-                            <span className={hasPermission ? "permission-yes" : "permission-no"}>
-                              {hasPermission ? <Check size={14} /> : <X size={13} />}
+                            <span
+                              className={
+                                hasPermission
+                                  ? "permission-yes"
+                                  : "permission-no"
+                              }
+                            >
+                              {hasPermission ? (
+                                <Check size={14} />
+                              ) : (
+                                <X size={13} />
+                              )}
                             </span>
                           </td>
                         );
@@ -1069,7 +1240,11 @@ export default function UserManagement({
 
       {/* 用户新增/编辑模态框 */}
       {modalMode && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setModalMode(null)}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setModalMode(null)}
+        >
           <section
             className="user-modal"
             role="dialog"
@@ -1079,10 +1254,22 @@ export default function UserManagement({
           >
             <header>
               <div>
-                <span className="eyebrow">{modalMode === "create" ? "创建组织成员" : "维护账号资料"}</span>
-                <h2 id="user-modal-title">{modalMode === "create" ? "新增用户" : "编辑用户"}</h2>
+                <span className="eyebrow">
+                  {modalMode === "create"
+                    ? t("users.modalCreateTitle")
+                    : t("users.modalEditTitle")}
+                </span>
+                <h2 id="user-modal-title">
+                  {modalMode === "create"
+                    ? t("users.newUser")
+                    : t("users.modalEditTitle")}
+                </h2>
               </div>
-              <button type="button" aria-label="关闭" onClick={() => setModalMode(null)}>
+              <button
+                type="button"
+                aria-label={t("common.close")}
+                onClick={() => setModalMode(null)}
+              >
                 <X size={19} />
               </button>
             </header>
@@ -1094,78 +1281,114 @@ export default function UserManagement({
               )}
               <div className="modal-form-grid">
                 <label>
-                  <span>姓名</span>
+                  <span>{t("users.nameLabel")}</span>
                   <input
                     value={form.name}
-                    onChange={(event) => setForm({ ...form, name: event.target.value })}
-                    placeholder="成员姓名"
+                    onChange={(event) =>
+                      setForm({ ...form, name: event.target.value })
+                    }
+                    placeholder={t("users.nameLabel")}
                     required
                     autoFocus
                   />
                 </label>
                 <label>
-                  <span>邮箱地址</span>
+                  <span>{t("users.emailLabel")}</span>
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(event) => setForm({ ...form, email: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, email: event.target.value })
+                    }
                     placeholder="name@company.com"
                     required
                   />
                 </label>
                 <label>
-                  <span>手机号码</span>
+                  <span>{t("users.phoneLabel")}</span>
                   <input
                     value={form.phone}
-                    onChange={(event) => setForm({ ...form, phone: event.target.value })}
-                    placeholder="可选"
+                    onChange={(event) =>
+                      setForm({ ...form, phone: event.target.value })
+                    }
+                    placeholder={t("users.phonePlaceholder")}
                   />
                 </label>
                 <label>
-                  <span>初始 / 新密码</span>
+                  <span>{t("users.passwordLabel")}</span>
                   <input
                     type="password"
                     autoComplete="new-password"
                     minLength={10}
                     value={form.password}
-                    onChange={(event) => setForm({ ...form, password: event.target.value })}
-                    placeholder={modalMode === "edit" ? "留空表示不修改" : "至少 10 个字符"}
-                    required={modalMode === "create" && form.status === "active"}
+                    onChange={(event) =>
+                      setForm({ ...form, password: event.target.value })
+                    }
+                    placeholder={
+                      modalMode === "edit"
+                        ? t("users.passwordEditPlaceholder")
+                        : t("users.passwordCreatePlaceholder")
+                    }
+                    required={
+                      modalMode === "create" && form.status === "active"
+                    }
                   />
                 </label>
                 <label>
-                  <span>所属部门</span>
+                  <span>{t("users.departmentLabel")}</span>
                   <input
                     value={form.department}
-                    onChange={(event) => setForm({ ...form, department: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, department: event.target.value })
+                    }
                     required
                   />
                 </label>
                 <label>
-                  <span>所属团队</span>
+                  <span>{t("users.teamLabel")}</span>
                   <input
                     value={form.team}
-                    onChange={(event) => setForm({ ...form, team: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, team: event.target.value })
+                    }
                     required
                   />
                 </label>
                 <label>
-                  <span>用户角色</span>
+                  <span>{t("users.roleLabel")}</span>
                   <select
                     value={form.role}
-                    onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        role: event.target.value as UserRole,
+                      })
+                    }
                   >
                     {currentUserRole === "super_admin" && (
-                      <option value="super_admin">超级管理员</option>
+                      <option value="super_admin">
+                        {t("roles.super_admin")}
+                      </option>
                     )}
                     {currentUserRole === "super_admin" && (
-                      <option value="project_admin">项目管理员</option>
+                      <option value="project_admin">
+                        {t("roles.project_admin")}
+                      </option>
                     )}
-                    <option value="member">研发成员</option>
-                    <option value="tester">测试人员</option>
-                    <option value="viewer">只读访客</option>
+                    <option value="member">{t("roles.member")}</option>
+                    <option value="tester">{t("roles.tester")}</option>
+                    <option value="viewer">{t("roles.viewer")}</option>
                     {roles
-                      .filter((r) => !["super_admin", "project_admin", "member", "tester", "viewer"].includes(r.id))
+                      .filter(
+                        (r) =>
+                          ![
+                            "super_admin",
+                            "project_admin",
+                            "member",
+                            "tester",
+                            "viewer",
+                          ].includes(r.id),
+                      )
                       .map((customRole) => (
                         <option key={customRole.id} value={customRole.id}>
                           {customRole.name}
@@ -1174,24 +1397,43 @@ export default function UserManagement({
                   </select>
                 </label>
                 <label>
-                  <span>账号状态</span>
+                  <span>{t("common.status")}</span>
                   <select
                     value={form.status}
-                    onChange={(event) => setForm({ ...form, status: event.target.value as UserStatus })}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        status: event.target.value as UserStatus,
+                      })
+                    }
                   >
-                    <option value="active">正常</option>
-                    <option value="invited">待激活</option>
-                    <option value="disabled">已停用</option>
+                    <option value="active">{t("userStatuses.active")}</option>
+                    <option value="invited">
+                      {t("userStatuses.invited")}
+                    </option>
+                    <option value="disabled">
+                      {t("userStatuses.disabled")}
+                    </option>
                   </select>
                 </label>
               </div>
               <p className="form-hint">
-                待激活账号可以先不设置密码；设为“正常”后必须配置至少 10 位且同时包含字母和数字的密码。项目数和容量由项目成员及工时明细自动计算。
+                {t("users.passwordCreatePlaceholder")}
               </p>
               <footer>
-                <button type="button" onClick={() => setModalMode(null)}>取消</button>
-                <button className="primary-action" type="submit" disabled={saving}>
-                  {saving ? "正在保存…" : modalMode === "create" ? "创建用户" : "保存修改"}
+                <button type="button" onClick={() => setModalMode(null)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving
+                    ? t("common.saving")
+                    : modalMode === "create"
+                      ? t("common.create")
+                      : t("common.save")}
                 </button>
               </footer>
             </form>
@@ -1201,7 +1443,11 @@ export default function UserManagement({
 
       {/* 角色新增/编辑模态框 */}
       {roleModalMode && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setRoleModalMode(null)}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setRoleModalMode(null)}
+        >
           <section
             className="user-modal role-modal"
             role="dialog"
@@ -1211,10 +1457,22 @@ export default function UserManagement({
           >
             <header>
               <div>
-                <span className="eyebrow">{roleModalMode === "create" ? "创建自定义角色" : "配置角色权限"}</span>
-                <h2 id="role-modal-title">{roleModalMode === "create" ? "新增角色" : "编辑角色"}</h2>
+                <span className="eyebrow">
+                  {roleModalMode === "create"
+                    ? t("users.roles.newRole")
+                    : t("users.roles.editPermissions")}
+                </span>
+                <h2 id="role-modal-title">
+                  {roleModalMode === "create"
+                    ? t("users.roles.newRole")
+                    : t("users.roles.editPermissions")}
+                </h2>
               </div>
-              <button type="button" aria-label="关闭" onClick={() => setRoleModalMode(null)}>
+              <button
+                type="button"
+                aria-label={t("common.close")}
+                onClick={() => setRoleModalMode(null)}
+              >
                 <X size={19} />
               </button>
             </header>
@@ -1226,42 +1484,51 @@ export default function UserManagement({
               )}
               <div className="modal-form-grid">
                 <label>
-                  <span>角色名称</span>
+                  <span>{t("users.roles.roleNameLabel")}</span>
                   <input
                     value={roleForm.name}
-                    onChange={(event) => setRoleForm({ ...roleForm, name: event.target.value })}
-                    placeholder="如：技术总监、敏捷教练、运维专家"
+                    onChange={(event) =>
+                      setRoleForm({ ...roleForm, name: event.target.value })
+                    }
+                    placeholder={t("users.roles.roleNamePlaceholder")}
                     required
                     maxLength={30}
                     autoFocus
                   />
                 </label>
                 <label>
-                  <span>主题色调</span>
+                  <span>{t("users.roles.toneLabel")}</span>
                   <select
                     value={roleForm.tone}
-                    onChange={(event) => setRoleForm({ ...roleForm, tone: event.target.value })}
+                    onChange={(event) =>
+                      setRoleForm({ ...roleForm, tone: event.target.value })
+                    }
                   >
                     {toneOptions.map((tone) => (
                       <option key={tone.value} value={tone.value}>
-                        {tone.label}
+                        {locale === "zh" ? tone.labelZh : tone.labelEn}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="full-width">
-                  <span>角色职责描述</span>
+                  <span>{t("users.roles.descriptionLabel")}</span>
                   <input
                     value={roleForm.description}
-                    onChange={(event) => setRoleForm({ ...roleForm, description: event.target.value })}
-                    placeholder="简述该角色的职责范畴与权限分配目标"
+                    onChange={(event) =>
+                      setRoleForm({
+                        ...roleForm,
+                        description: event.target.value,
+                      })
+                    }
+                    placeholder={t("users.roles.descriptionPlaceholder")}
                     maxLength={200}
                   />
                 </label>
               </div>
 
               <div className="role-permissions-config">
-                <h4>功能权限勾选</h4>
+                <h4>{t("users.roles.checkPermissionsTitle")}</h4>
                 <div className="permissions-checkbox-grid">
                   {permissionRows.map((perm, idx) => (
                     <label key={perm} className="permission-check-item">
@@ -1277,9 +1544,22 @@ export default function UserManagement({
               </div>
 
               <footer>
-                <button type="button" onClick={() => setRoleModalMode(null)}>取消</button>
-                <button className="primary-action" type="submit" disabled={savingRole}>
-                  {savingRole ? "正在保存…" : roleModalMode === "create" ? "创建角色" : "保存权限"}
+                <button
+                  type="button"
+                  onClick={() => setRoleModalMode(null)}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={savingRole}
+                >
+                  {savingRole
+                    ? t("common.saving")
+                    : roleModalMode === "create"
+                      ? t("common.create")
+                      : t("common.save")}
                 </button>
               </footer>
             </form>
@@ -1287,7 +1567,11 @@ export default function UserManagement({
         </div>
       )}
 
-      {notice && <div className="toast" role="status"><Check size={15} /> {notice}</div>}
+      {notice && (
+        <div className="toast" role="status">
+          <Check size={15} /> {notice}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
-import assert from "node:assert/strict";
 import { getDb } from "../db";
 import {
   users,
@@ -9,7 +8,6 @@ import {
   sprints,
   tasks,
   workLogs,
-  auditLogs,
 } from "../db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";

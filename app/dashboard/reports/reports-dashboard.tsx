@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserRole } from "@/db/schema";
-import { roleLabels } from "@/lib/users";
+import { useTranslation } from "@/lib/i18n";
 import PaginationControls, { useClientPagination } from "../pagination-controls";
 
 type ReportData = {
@@ -72,12 +72,18 @@ function csvCell(value: string | number): string {
 }
 
 /**
- * 渲染交付快照、周期工时趋势和成员负载报表。
+ * 渲染支持中英文国际化的交付快照、周期工时趋势与成员负载报表。
  *
- * @param canExport 当前用户是否具备报表文件导出权限。
- * @return 报表组件。
+ * @param props 组件属性。
+ * @param props.canExport 当前用户是否具备报表文件导出权限。
+ * @return 报表中心组件。
  */
-export default function ReportsDashboard({ canExport }: { canExport: boolean }) {
+export default function ReportsDashboard({
+  canExport,
+}: {
+  canExport: boolean;
+}) {
+  const { t, getRoleLabel } = useTranslation();
   const [period, setPeriod] = useState("30");
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,24 +101,32 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
       const response = await fetch(`/api/reports?period=${period}`, {
         cache: "no-store",
       });
-      const result = (await response.json()) as ReportData & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "报表加载失败。");
+      const result = (await response.json()) as ReportData & {
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setData(result);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "报表加载失败。");
+      setError(
+        loadError instanceof Error ? loadError.message : t("common.error"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadReport(), 0);
     return () => window.clearTimeout(timer);
   }, [loadReport]);
 
-  const weeklyMax = Math.max(1, ...(data?.weekly.map((item) => item.hours) ?? [1]));
+  const weeklyMax = Math.max(
+    1,
+    ...(data?.weekly.map((item) => item.hours) ?? [1]),
+  );
   const statusTotal = useMemo(
-    () => data?.statusDistribution.reduce((sum, item) => sum + item.count, 0) ?? 0,
+    () =>
+      data?.statusDistribution.reduce((sum, item) => sum + item.count, 0) ?? 0,
     [data],
   );
   const projectPagination = useClientPagination(data?.projectDelivery ?? []);
@@ -120,13 +134,22 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
 
   /**
    * 将当前项目交付报表导出为安全 CSV。
-   *
-   * @return 无返回值。
    */
   function exportCsv() {
     if (!data) return;
     const rows = [
-      ["项目代号", "项目名称", "任务总数", "已完成", "测试已指派", "评审待指派测试", "完成率", "预估工时", "实际工时", "偏差"],
+      [
+        t("projects.codeLabel"),
+        t("projects.nameLabel"),
+        t("reports.tasksTotal"),
+        t("reports.tasksCompleted"),
+        t("reports.testerAssigned"),
+        t("reports.awaitingTester"),
+        t("reports.completionRateLabel"),
+        t("reports.estimateHoursCol"),
+        t("reports.actualHoursCol"),
+        t("reports.deviationCol"),
+      ],
       ...data.projectDelivery.map((project) => [
         project.code,
         project.name,
@@ -141,11 +164,11 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
       ]),
     ];
     const csv = `\uFEFF${rows
-      .map((row) =>
-        row.map(csvCell).join(","),
-      )
+      .map((row) => row.map(csvCell).join(","))
       .join("\n")}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
     const link = document.createElement("a");
     link.href = url;
     link.download = `flowboard-report-${period}d.csv`;
@@ -157,55 +180,242 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
     <div className="module-page reports-page">
       <section className="module-heading">
         <div>
-          <span className="eyebrow">数据驱动复盘</span>
-          <h2>把交付表现变成可行动的洞察</h2>
-          <p>统一观察开发与测试任务完成、项目偏差、成员投入和阶段趋势。</p>
+          <span className="eyebrow">{t("reports.eyebrow")}</span>
+          <h2>{t("reports.heading")}</h2>
+          <p>{t("reports.description")}</p>
         </div>
         <div className="report-heading-actions">
-          <label className="module-select"><select value={period} onChange={(event) => {
-            setPeriod(event.target.value);
-            projectPagination.resetPage();
-            memberPagination.resetPage();
-          }}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></label>
-          <button className="secondary-action" type="button" onClick={() => void loadReport()} aria-label="刷新报表"><RefreshCw size={15} /></button>
-          {canExport && <button className="primary-action module-primary report-export" type="button" onClick={exportCsv} disabled={!data}><Download size={16} /> 导出 CSV</button>}
+          <label className="module-select">
+            <select
+              value={period}
+              onChange={(event) => {
+                setPeriod(event.target.value);
+                projectPagination.resetPage();
+                memberPagination.resetPage();
+              }}
+            >
+              <option value="7">{t("reports.periods.7d")}</option>
+              <option value="30">{t("reports.periods.30d")}</option>
+              <option value="90">{t("reports.periods.90d")}</option>
+              <option value="365">{t("reports.periods.1y")}</option>
+            </select>
+          </label>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => void loadReport()}
+            aria-label={t("reports.refreshAria")}
+          >
+            <RefreshCw size={15} />
+          </button>
+          {canExport && (
+            <button
+              className="primary-action module-primary report-export"
+              type="button"
+              onClick={exportCsv}
+              disabled={!data}
+            >
+              <Download size={16} /> {t("reports.exportCsv")}
+            </button>
+          )}
         </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}
-      {loading || !data ? <div className="module-loading">正在生成报表…</div> : (
+      {loading || !data ? (
+        <div className="module-loading">{t("common.loading")}</div>
+      ) : (
         <>
           <section className="report-stat-grid">
-            <article><span className="metric-icon blue"><FolderKanban size={19} /></span><div><small>项目 / 任务</small><b>{data.stats.projectCount} <i>/ {data.stats.taskCount}</i></b></div><em>当前项目组合</em></article>
-            <article><span className="metric-icon green"><CheckCircle2 size={19} /></span><div><small>任务完成率</small><b>{data.stats.completionRate}%</b></div><em>{data.stats.taskCount ? `${Math.round((data.stats.taskCount * data.stats.completionRate) / 100)} 项已完成` : "暂无任务"}</em></article>
-            <article><span className="metric-icon violet"><Clock3 size={19} /></span><div><small>实际 / 预估</small><b>{data.stats.actualHours.toFixed(1)}h <i>/ {data.stats.estimateHours.toFixed(1)}h</i></b></div><em className={data.stats.deviation > 10 ? "risk" : ""}>偏差 {data.stats.deviation > 0 ? "+" : ""}{data.stats.deviation}%</em></article>
-            <article><span className="metric-icon orange"><AlertTriangle size={19} /></span><div><small>测试覆盖 / 待指派</small><b>{data.stats.testingTaskCount} <i>/ {data.stats.awaitingTesterCount}</i></b></div><em className={data.stats.awaitingTesterCount ? "risk" : ""}>{data.stats.awaitingTesterCount ? "评审任务需补充测试负责人" : `逾期任务 ${data.stats.overdue}`}</em></article>
+            <article>
+              <span className="metric-icon blue">
+                <FolderKanban size={19} />
+              </span>
+              <div>
+                <small>{t("reports.summary.projectTaskSummary")}</small>
+                <b>
+                  {data.stats.projectCount}{" "}
+                  <i>/ {data.stats.taskCount}</i>
+                </b>
+              </div>
+              <em>{t("reports.summary.activePortfolio")}</em>
+            </article>
+            <article>
+              <span className="metric-icon green">
+                <CheckCircle2 size={19} />
+              </span>
+              <div>
+                <small>{t("reports.summary.completionRate")}</small>
+                <b>{data.stats.completionRate}%</b>
+              </div>
+              <em>
+                {data.stats.taskCount
+                  ? t("reports.summary.completedTasksCount", {
+                      count: Math.round(
+                        (data.stats.taskCount * data.stats.completionRate) /
+                          100,
+                      ),
+                    })
+                  : t("reports.summary.noTasksYet")}
+              </em>
+            </article>
+            <article>
+              <span className="metric-icon violet">
+                <Clock3 size={19} />
+              </span>
+              <div>
+                <small>{t("workbench.actualVsEstimateHours")}</small>
+                <b>
+                  {data.stats.actualHours.toFixed(1)}h{" "}
+                  <i>/ {data.stats.estimateHours.toFixed(1)}h</i>
+                </b>
+              </div>
+              <em className={data.stats.deviation > 10 ? "risk" : ""}>
+                {t("workbench.deviationRisk", {
+                  sign: data.stats.deviation > 0 ? "+" : "",
+                  deviation: data.stats.deviation,
+                })}
+              </em>
+            </article>
+            <article>
+              <span className="metric-icon orange">
+                <AlertTriangle size={19} />
+              </span>
+              <div>
+                <small>{t("reports.summary.testCoverage")}</small>
+                <b>
+                  {data.stats.testingTaskCount}{" "}
+                  <i>/ {data.stats.awaitingTesterCount}</i>
+                </b>
+              </div>
+              <em className={data.stats.awaitingTesterCount ? "risk" : ""}>
+                {data.stats.awaitingTesterCount
+                  ? t("reports.summary.needsTesterNotice")
+                  : t("workbench.overdueTasks") + `: ${data.stats.overdue}`}
+              </em>
+            </article>
           </section>
 
           <section className="report-main-grid">
             <article className="module-card report-trend-card">
-              <header className="module-card-header"><div><span className="eyebrow">工时趋势</span><h3>所选周期登记工时</h3></div><span className="header-count">累计 {data.stats.loggedHours.toFixed(1)}h</span></header>
+              <header className="module-card-header">
+                <div>
+                  <span className="eyebrow">{t("reports.trendEyebrow")}</span>
+                  <h3>{t("reports.trendHeading")}</h3>
+                </div>
+                <span className="header-count">
+                  {t("reports.trendTotalLogged", {
+                    hours: data.stats.loggedHours.toFixed(1),
+                  })}
+                </span>
+              </header>
               <div className="report-bar-chart">
-                {data.weekly.map((item) => <div key={item.label}><span><i style={{ height: `${Math.max(5, (item.hours / weeklyMax) * 100)}%` }} /></span><b>{item.hours.toFixed(1)}h</b><small>{item.label}</small></div>)}
+                {data.weekly.map((item) => (
+                  <div key={item.label}>
+                    <span>
+                      <i
+                        style={{
+                          height: `${Math.max(5, (item.hours / weeklyMax) * 100)}%`,
+                        }}
+                      />
+                    </span>
+                    <b>{item.hours.toFixed(1)}h</b>
+                    <small>{item.label}</small>
+                  </div>
+                ))}
               </div>
             </article>
             <article className="module-card status-distribution-card">
-              <header className="module-card-header"><div><span className="eyebrow">任务结构</span><h3>状态分布</h3></div></header>
+              <header className="module-card-header">
+                <div>
+                  <span className="eyebrow">{t("reports.distributionEyebrow")}</span>
+                  <h3>{t("reports.distributionHeading")}</h3>
+                </div>
+              </header>
               <div className="status-donut-wrap">
-                <div className="status-donut" style={{ "--completion": `${data.stats.completionRate * 3.6}deg` } as React.CSSProperties}><span><b>{data.stats.completionRate}%</b><small>完成率</small></span></div>
-                <div className="status-legend">{data.statusDistribution.map((item) => <div key={item.status}><i className={`status-color-${item.status}`} /><span>{item.label}</span><b>{item.count}</b><small>{statusTotal ? Math.round((item.count / statusTotal) * 100) : 0}%</small></div>)}</div>
+                <div
+                  className="status-donut"
+                  style={
+                    {
+                      "--completion": `${data.stats.completionRate * 3.6}deg`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <span>
+                    <b>{data.stats.completionRate}%</b>
+                    <small>{t("reports.completionRateLabel")}</small>
+                  </span>
+                </div>
+                <div className="status-legend">
+                  {data.statusDistribution.map((item) => (
+                    <div key={item.status}>
+                      <i className={`status-color-${item.status}`} />
+                      <span>{item.label}</span>
+                      <b>{item.count}</b>
+                      <small>
+                        {statusTotal
+                          ? Math.round((item.count / statusTotal) * 100)
+                          : 0}
+                        %
+                      </small>
+                    </div>
+                  ))}
+                </div>
               </div>
             </article>
           </section>
 
           <section className="report-detail-grid">
             <article className="module-card project-report-card">
-              <header className="module-card-header"><div><span className="eyebrow">项目表现</span><h3>交付与工时偏差</h3></div></header>
+              <header className="module-card-header">
+                <div>
+                  <span className="eyebrow">{t("reports.projectPerfEyebrow")}</span>
+                  <h3>{t("reports.projectPerfHeading")}</h3>
+                </div>
+              </header>
               <div className="project-report-list">
                 {projectPagination.pageItems.map((project) => (
                   <div key={project.id}>
-                    <span className="project-mark" style={{ background: project.color }}>{project.code.slice(0, 2)}</span>
-                    <div><header><b>{project.name}</b><span>{project.completed}/{project.total} · {project.progress}%</span></header><div className="progress-track"><i style={{ width: `${project.progress}%`, background: project.color }} /></div><footer><span>预估 {project.estimateHours.toFixed(1)}h</span><span>实际 {project.actualHours.toFixed(1)}h</span><span>测试 {project.testingTaskCount}/{project.total}</span><strong className={project.deviation > 10 ? "risk" : ""}>{project.deviation > 0 ? "+" : ""}{project.deviation}%</strong></footer></div>
+                    <span
+                      className="project-mark"
+                      style={{ background: project.color }}
+                    >
+                      {project.code.slice(0, 2)}
+                    </span>
+                    <div>
+                      <header>
+                        <b>{project.name}</b>
+                        <span>
+                          {project.completed}/{project.total} ·{" "}
+                          {project.progress}%
+                        </span>
+                      </header>
+                      <div className="progress-track">
+                        <i
+                          style={{
+                            width: `${project.progress}%`,
+                            background: project.color,
+                          }}
+                        />
+                      </div>
+                      <footer>
+                        <span>
+                          {t("reports.estimateHoursCol")}: {project.estimateHours.toFixed(1)}h
+                        </span>
+                        <span>
+                          {t("reports.actualHoursCol")}: {project.actualHours.toFixed(1)}h
+                        </span>
+                        <span>
+                          QA: {project.testingTaskCount}/{project.total}
+                        </span>
+                        <strong
+                          className={project.deviation > 10 ? "risk" : ""}
+                        >
+                          {project.deviation > 0 ? "+" : ""}
+                          {project.deviation}%
+                        </strong>
+                      </footer>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -214,25 +424,64 @@ export default function ReportsDashboard({ canExport }: { canExport: boolean }) 
                   page={projectPagination.page}
                   pageSize={projectPagination.pageSize}
                   total={data.projectDelivery.length}
-                  itemLabel="个项目"
+                  itemLabel={t("projects.itemUnit")}
                   onPageChange={projectPagination.setPage}
                   onPageSizeChange={projectPagination.changePageSize}
                 />
               )}
             </article>
             <article className="module-card member-report-card">
-              <header className="module-card-header"><div><span className="eyebrow">成员负载</span><h3>投入与利用率</h3></div><Users2 size={18} /></header>
+              <header className="module-card-header">
+                <div>
+                  <span className="eyebrow">{t("reports.memberLoadEyebrow")}</span>
+                  <h3>{t("reports.memberLoadHeading")}</h3>
+                </div>
+                <Users2 size={18} />
+              </header>
               <div className="member-report-list">
-                {data.memberLoad.length ? memberPagination.pageItems.map((member) => (
-                  <div key={member.id}><span className="avatar">{member.name.slice(0, 1)}</span><div><header><b>{member.name} · {roleLabels[member.role]}</b><span>{member.hours.toFixed(1)}h · {member.projectCount} 个项目</span></header><div className="progress-track"><i style={{ width: `${Math.min(100, member.utilization)}%` }} /></div></div><strong className={member.utilization > 100 ? "risk" : ""}>{member.utilization}%</strong></div>
-                )) : <div className="module-empty"><Gauge size={24} /> 当前周期暂无成员工时</div>}
+                {data.memberLoad.length ? (
+                  memberPagination.pageItems.map((member) => (
+                    <div key={member.id}>
+                      <span className="avatar">
+                        {member.name.slice(0, 1)}
+                      </span>
+                      <div>
+                        <header>
+                          <b>
+                            {member.name} · {getRoleLabel(member.role)}
+                          </b>
+                          <span>
+                            {member.hours.toFixed(1)}h ·{" "}
+                            {member.projectCount} {t("projects.itemUnit")}
+                          </span>
+                        </header>
+                        <div className="progress-track">
+                          <i
+                            style={{
+                              width: `${Math.min(100, member.utilization)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <strong
+                        className={member.utilization > 100 ? "risk" : ""}
+                      >
+                        {member.utilization}%
+                      </strong>
+                    </div>
+                  ))
+                ) : (
+                  <div className="module-empty">
+                    <Gauge size={24} /> {t("reports.noMemberHours")}
+                  </div>
+                )}
               </div>
               {data.memberLoad.length > 0 && (
                 <PaginationControls
                   page={memberPagination.page}
                   pageSize={memberPagination.pageSize}
                   total={data.memberLoad.length}
-                  itemLabel="位成员"
+                  itemLabel={t("users.itemUnit")}
                   onPageChange={memberPagination.setPage}
                   onPageSizeChange={memberPagination.changePageSize}
                 />

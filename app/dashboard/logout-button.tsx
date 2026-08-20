@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import { useDashboardDialog } from "./dashboard-dialog-provider";
 
 type LogoutButtonProps = {
@@ -10,26 +11,26 @@ type LogoutButtonProps = {
 };
 
 /**
- * 渲染带二次确认的退出登录按钮。
+ * 渲染带二次确认并支持中英文国际化的退出登录按钮。
  *
- * @param variant 图标按钮或用户菜单按钮样式。
+ * @param props 组件属性。
+ * @param props.variant 图标按钮或用户菜单按钮样式。
  * @return 退出登录按钮组件。
  */
 export default function LogoutButton({ variant = "icon" }: LogoutButtonProps) {
   const router = useRouter();
+  const { t } = useTranslation();
   const { confirm } = useDashboardDialog();
   const [pending, setPending] = useState(false);
 
   /**
    * 确认用户意图后注销当前会话并返回登录页。
-   *
-   * @return 注销流程完成后的 Promise。
    */
   async function logout() {
     const confirmed = await confirm({
-      title: "退出登录",
-      message: "确定要退出当前账号吗？退出后需要重新登录才能继续使用工作台。",
-      confirmLabel: "退出登录",
+      title: t("logout.title"),
+      message: t("logout.message"),
+      confirmLabel: t("logout.confirm"),
     });
     if (!confirmed) return;
 
@@ -47,13 +48,13 @@ export default function LogoutButton({ variant = "icon" }: LogoutButtonProps) {
     <button
       className={`logout-button ${variant === "menu" ? "profile-menu-logout" : ""}`}
       type="button"
-      aria-label="退出登录"
-      title="退出登录"
+      aria-label={t("logout.button")}
+      title={t("logout.button")}
       disabled={pending}
       onClick={logout}
     >
       <LogOut size={16} />
-      {variant === "menu" && <span>退出登录</span>}
+      {variant === "menu" && <span>{t("logout.button")}</span>}
     </button>
   );
 }

@@ -22,7 +22,7 @@ import {
   type FormEvent,
 } from "react";
 import type { SprintStatus, TaskStatus } from "@/db/schema";
-import { sprintStatusLabels, taskStatusLabels } from "@/lib/workspace";
+import { useTranslation } from "@/lib/i18n";
 import { useDashboardDialog } from "../dashboard-dialog-provider";
 import PaginationControls, { useClientPagination } from "../pagination-controls";
 import ViewModeToggle, { usePersistentViewMode } from "../view-mode-toggle";
@@ -66,12 +66,14 @@ type ProjectOption = {
   color: string;
   canManage: boolean;
 };
+
 type CandidateTask = SprintTask & {
   projectId: string;
   sprintName: string | null;
   sprintStatus: SprintStatus | null;
   testerName: string | null;
 };
+
 type SprintForm = {
   projectId: string;
   name: string;
@@ -96,7 +98,7 @@ const emptyForm: SprintForm = {
  * @param value ISO 日期。
  * @return YYYY-MM-DD 字符串。
  */
-function inputDate(value: string) {
+function inputDate(value: string): string {
   return value.slice(0, 10);
 }
 
@@ -104,21 +106,28 @@ function inputDate(value: string) {
  * 格式化迭代周期日期。
  *
  * @param value ISO 日期。
- * @return 简短中文日期文本。
+ * @param locale 当前语言环境。
+ * @return 本地化简短日期文本。
  */
-function displayDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
+function displayDate(value: string, locale: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 /**
- * 渲染迭代列表、容量和任务范围管理。
+ * 渲染支持中英文国际化的迭代列表、容量和任务范围管理。
  *
  * @return 迭代管理组件。
  */
 export default function SprintManagement() {
+  const { t, locale, getSprintStatusLabel, getTaskStatusLabel } =
+    useTranslation();
   const { confirm } = useDashboardDialog();
   const [sprints, setSprints] = useState<SprintRecord[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -142,6 +151,8 @@ export default function SprintManagement() {
   const [planningLoading, setPlanningLoading] = useState(false);
   const planningTaskPagination = useClientPagination(candidateTasks);
 
+  const sprintStatusList: SprintStatus[] = ["planned", "active", "completed"];
+
   /**
    * 加载可见迭代及项目权限。
    *
@@ -158,16 +169,18 @@ export default function SprintManagement() {
         canCreate?: boolean;
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "迭代加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setSprints(result.data ?? []);
       setProjects(result.projects ?? []);
       setCanCreate(Boolean(result.canCreate));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "迭代加载失败。");
+      setError(
+        loadError instanceof Error ? loadError.message : t("common.error"),
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSprints(), 0);
@@ -190,6 +203,7 @@ export default function SprintManagement() {
           sprint.projectName.toLowerCase().includes(normalized)),
     );
   }, [query, sprints, status]);
+
   const {
     page,
     pageSize,
@@ -213,8 +227,6 @@ export default function SprintManagement() {
 
   /**
    * 打开新建迭代表单并生成默认周期。
-   *
-   * @return 无返回值。
    */
   function openCreate() {
     const start = new Date();
@@ -234,7 +246,6 @@ export default function SprintManagement() {
    * 使用现有迭代数据打开编辑表单。
    *
    * @param sprint 待编辑迭代。
-   * @return 无返回值。
    */
   function openEdit(sprint: SprintRecord) {
     setEditingId(sprint.id);
@@ -269,12 +280,14 @@ export default function SprintManagement() {
         },
       );
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "迭代保存失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setFormOpen(false);
-      setNotice(editingId ? "迭代已更新" : "迭代已创建");
+      setNotice(t("sprints.saveSuccess"));
       await loadSprints();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "迭代保存失败。");
+      setError(
+        saveError instanceof Error ? saveError.message : t("common.error"),
+      );
     } finally {
       setSaving(false);
     }
@@ -295,20 +308,24 @@ export default function SprintManagement() {
       targetStatus === "completed" &&
       sprint.completedTaskCount !== sprint.taskCount
     ) {
-      setError("迭代仍有未完成任务，请先完成任务或在任务规划中将其移出。");
+      setError(t("common.error"));
       return;
     }
     const confirmation =
       targetStatus === "completed"
-        ? `确定完成迭代“${sprint.name}”吗？完成后任务和工时将锁定。`
-        : targetStatus === "active" && sprint.status === "completed"
-          ? `确定重新打开迭代“${sprint.name}”吗？它会恢复为进行中。`
-          : null;
-    if (confirmation) {
+        ? t("sprints.deleteConfirmMsg", { name: sprint.name })
+        : null;
+
+    if (targetStatus === "completed" || (targetStatus === "active" && sprint.status === "completed")) {
       const confirmed = await confirm({
-        title: targetStatus === "completed" ? "完成迭代" : "重新打开迭代",
-        message: confirmation,
-        confirmLabel: targetStatus === "completed" ? "完成并锁定" : "重新打开",
+        title:
+          targetStatus === "completed"
+            ? t("projectStatuses.completed")
+            : t("sprints.planTasks"),
+        message:
+          confirmation ??
+          t("sprints.deleteConfirmMsg", { name: sprint.name }),
+        confirmLabel: t("common.confirm"),
         tone: targetStatus === "completed" ? "danger" : "default",
       });
       if (!confirmed) return;
@@ -323,20 +340,14 @@ export default function SprintManagement() {
         body: JSON.stringify({ status: targetStatus }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "迭代状态更新失败。");
-      setNotice(
-        targetStatus === "completed"
-          ? "迭代已完成并锁定"
-          : sprint.status === "completed"
-            ? "迭代已重新打开"
-            : "迭代已启动",
-      );
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("common.success"));
       await loadSprints();
     } catch (transitionError) {
       setError(
         transitionError instanceof Error
           ? transitionError.message
-          : "迭代状态更新失败。",
+          : t("common.error"),
       );
     } finally {
       setTransitioningId(null);
@@ -362,15 +373,19 @@ export default function SprintManagement() {
         data?: CandidateTask[];
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "任务加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       const rows = result.data ?? [];
       setCandidateTasks(rows);
       setSelectedTaskIds(
-        rows.filter((task) => task.sprintId === sprint.id).map((task) => task.id),
+        rows
+          .filter((task) => task.sprintId === sprint.id)
+          .map((task) => task.id),
       );
     } catch (planningError) {
       setError(
-        planningError instanceof Error ? planningError.message : "任务加载失败。",
+        planningError instanceof Error
+          ? planningError.message
+          : t("common.error"),
       );
       setPlanningSprint(null);
     } finally {
@@ -393,15 +408,15 @@ export default function SprintManagement() {
         body: JSON.stringify({ taskIds: selectedTaskIds }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "迭代规划保存失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setPlanningSprint(null);
-      setNotice("迭代任务已更新");
+      setNotice(t("sprints.planSuccess"));
       await loadSprints();
     } catch (planningError) {
       setError(
         planningError instanceof Error
           ? planningError.message
-          : "迭代规划保存失败。",
+          : t("common.error"),
       );
     } finally {
       setPlanningLoading(false);
@@ -416,9 +431,9 @@ export default function SprintManagement() {
    */
   async function deleteSprint(sprint: SprintRecord) {
     const confirmed = await confirm({
-      title: "删除迭代",
-      message: `确定删除迭代“${sprint.name}”吗？迭代中的任务会回到未规划状态。`,
-      confirmLabel: "删除迭代",
+      title: t("sprints.deleteConfirmTitle"),
+      message: t("sprints.deleteConfirmMsg", { name: sprint.name }),
+      confirmLabel: t("sprints.deleteSprint"),
       tone: "danger",
     });
     if (!confirmed) return;
@@ -427,12 +442,14 @@ export default function SprintManagement() {
         method: "DELETE",
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "迭代删除失败。");
-      setNotice("迭代已删除");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("sprints.deleteSuccess"));
       await loadSprints();
     } catch (deleteError) {
       setError(
-        deleteError instanceof Error ? deleteError.message : "迭代删除失败。",
+        deleteError instanceof Error
+          ? deleteError.message
+          : t("common.error"),
       );
     }
   }
@@ -441,201 +458,441 @@ export default function SprintManagement() {
     <div className="module-page sprint-page">
       <section className="module-heading">
         <div>
-          <span className="eyebrow">交付节奏管理</span>
-          <h2>用短周期稳定推进交付</h2>
-          <p>规划迭代目标、容量和任务范围，持续观察完成率与工时消耗。</p>
+          <span className="eyebrow">{t("sprints.eyebrow")}</span>
+          <h2>{t("sprints.heading")}</h2>
+          <p>{t("sprints.description")}</p>
         </div>
         {canCreate && (
-          <button className="primary-action module-primary" type="button" onClick={openCreate}>
-            <Plus size={16} /> 新建迭代
+          <button
+            className="primary-action module-primary"
+            type="button"
+            onClick={openCreate}
+          >
+            <Plus size={16} /> {t("sprints.newSprint")}
           </button>
         )}
       </section>
 
       <section className="sprint-stat-grid">
-        <article><span className="metric-icon blue"><CircleDot size={19} /></span><div><small>进行中</small><b>{stats.active}</b></div></article>
-        <article><span className="metric-icon violet"><CalendarRange size={19} /></span><div><small>待启动</small><b>{stats.planned}</b></div></article>
-        <article><span className="metric-icon green"><CheckCircle2 size={19} /></span><div><small>已完成</small><b>{stats.completed}</b></div></article>
-        <article><span className="metric-icon orange"><Gauge size={19} /></span><div><small>当前总容量</small><b>{stats.capacity.toFixed(0)}h</b></div></article>
+        <article>
+          <span className="metric-icon blue">
+            <CircleDot size={19} />
+          </span>
+          <div>
+            <small>{t("sprintStatuses.active")}</small>
+            <b>{stats.active}</b>
+          </div>
+        </article>
+        <article>
+          <span className="metric-icon violet">
+            <CalendarRange size={19} />
+          </span>
+          <div>
+            <small>{t("sprintStatuses.planned")}</small>
+            <b>{stats.planned}</b>
+          </div>
+        </article>
+        <article>
+          <span className="metric-icon green">
+            <CheckCircle2 size={19} />
+          </span>
+          <div>
+            <small>{t("sprintStatuses.completed")}</small>
+            <b>{stats.completed}</b>
+          </div>
+        </article>
+        <article>
+          <span className="metric-icon orange">
+            <Gauge size={19} />
+          </span>
+          <div>
+            <small>{t("sprints.capacityLabel")}</small>
+            <b>{stats.capacity.toFixed(0)}h</b>
+          </div>
+        </article>
       </section>
 
       <section className="module-toolbar">
         <label className="module-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => {
-            setQuery(event.target.value);
-            resetPage();
-          }} placeholder="搜索迭代或项目" />
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              resetPage();
+            }}
+            placeholder={t("sprints.searchPlaceholder")}
+          />
         </label>
         <label className="module-select">
-          <select value={status} onChange={(event) => {
-            setStatus(event.target.value as "" | SprintStatus);
-            resetPage();
-          }}>
-            <option value="">全部状态</option>
-            {Object.entries(sprintStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value as "" | SprintStatus);
+              resetPage();
+            }}
+          >
+            <option value="">{t("sprints.allStatuses")}</option>
+            {sprintStatusList.map((st) => (
+              <option key={st} value={st}>
+                {getSprintStatusLabel(st)}
+              </option>
+            ))}
           </select>
         </label>
         <div className="toolbar-view-options">
-          <span className="toolbar-result">显示 {filtered.length} 个迭代</span>
+          <span className="toolbar-result">
+            {t("pagination.totalSummary", {
+              total: filtered.length,
+              label: t("sprints.itemUnit"),
+            })}
+          </span>
           <ViewModeToggle
             value={viewMode}
             onChange={setViewMode}
-            cardLabel="切换为迭代卡片布局"
-            listLabel="切换为迭代列表布局"
+            cardLabel={t("sprints.cardView")}
+            listLabel={t("sprints.listView")}
           />
         </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}
       {loading ? (
-        <div className="module-loading">正在加载迭代…</div>
+        <div className="module-loading">{t("common.loading")}</div>
       ) : filtered.length ? (
         viewMode === "card" ? (
-          <section className="sprint-list" aria-label="迭代卡片">
-          {paginatedSprints.map((sprint) => {
-            const capacityUsed = sprint.capacityHours
-              ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
-              : 0;
-            return (
-              <article className="sprint-card" key={sprint.id}>
-                <div className="sprint-accent" style={{ background: sprint.projectColor }} />
-                <header>
-                  <div>
-                    <small><i style={{ background: sprint.projectColor }} /> {sprint.projectCode} · {sprint.projectName}</small>
-                    <h3>{sprint.name}</h3>
-                  </div>
-                  <span className={`sprint-status sprint-${sprint.status}`}>{sprintStatusLabels[sprint.status]}</span>
-                </header>
-                <p>{sprint.goal || "尚未填写本次迭代目标。"}</p>
-                <div className="sprint-dates">
-                  <CalendarRange size={15} />
-                  <span>{displayDate(sprint.startDate)} — {displayDate(sprint.endDate)}</span>
-                </div>
-                <div className="sprint-progress-row">
-                  <div>
-                    <header><span>任务完成</span><b>{sprint.completedTaskCount}/{sprint.taskCount} · {sprint.progress}%</b></header>
-                    <div className="progress-track"><i style={{ width: `${sprint.progress}%`, background: sprint.projectColor }} /></div>
-                  </div>
-                  <div>
-                    <header><span>容量占用</span><b className={capacityUsed > 100 ? "risk" : ""}>{capacityUsed}%</b></header>
-                    <div className="progress-track"><i style={{ width: `${Math.min(100, capacityUsed)}%` }} /></div>
-                  </div>
-                </div>
-                <div className="sprint-hours">
-                  <span><small>容量</small><b>{sprint.capacityHours.toFixed(1)}h</b></span>
-                  <span><small>预估</small><b>{sprint.estimateHours.toFixed(1)}h</b></span>
-                  <span><small>实际</small><b>{sprint.actualHours.toFixed(1)}h</b></span>
-                  <span><small>测试覆盖</small><b>{sprint.testedTaskCount}/{sprint.taskCount}</b></span>
-                </div>
-                {sprint.canManage && (
-                  <footer>
-                    {sprint.status !== "completed" ? (
-                      <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划任务</button>
-                    ) : (
-                      <span>历史快照已锁定</span>
-                    )}
+          <section className="sprint-list" aria-label={t("sprints.cardView")}>
+            {paginatedSprints.map((sprint) => {
+              const capacityUsed = sprint.capacityHours
+                ? Math.round(
+                    (sprint.estimateHours / sprint.capacityHours) * 100,
+                  )
+                : 0;
+              return (
+                <article className="sprint-card" key={sprint.id}>
+                  <div
+                    className="sprint-accent"
+                    style={{ background: sprint.projectColor }}
+                  />
+                  <header>
                     <div>
-                      {sprint.status === "planned" && (
-                        <>
-                          <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><Play size={14} /> 启动</button>
-                          <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
-                          <button type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /></button>
-                        </>
-                      )}
-                      {sprint.status === "active" && (
-                        <>
-                          <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "completed")}><CheckCircle2 size={14} /> 完成</button>
-                          <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
-                        </>
-                      )}
-                      {sprint.status === "completed" && (
-                        <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><RotateCcw size={14} /> 重新打开</button>
-                      )}
+                      <small>
+                        <i style={{ background: sprint.projectColor }} />{" "}
+                        {sprint.projectCode} · {sprint.projectName}
+                      </small>
+                      <h3>{sprint.name}</h3>
                     </div>
-                  </footer>
-                )}
-              </article>
-            );
-          })}
+                    <span className={`sprint-status sprint-${sprint.status}`}>
+                      {getSprintStatusLabel(sprint.status)}
+                    </span>
+                  </header>
+                  <p>{sprint.goal || t("common.none")}</p>
+                  <div className="sprint-dates">
+                    <CalendarRange size={15} />
+                    <span>
+                      {displayDate(sprint.startDate, locale)} —{" "}
+                      {displayDate(sprint.endDate, locale)}
+                    </span>
+                  </div>
+                  <div className="sprint-progress-row">
+                    <div>
+                      <header>
+                        <span>
+                          {t("sprints.scopeRatio", {
+                            done: sprint.completedTaskCount,
+                            total: sprint.taskCount,
+                          })}
+                        </span>
+                        <b>{sprint.progress}%</b>
+                      </header>
+                      <div className="progress-track">
+                        <i
+                          style={{
+                            width: `${sprint.progress}%`,
+                            background: sprint.projectColor,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <header>
+                        <span>{t("sprints.capacityHours", { capacity: sprint.capacityHours.toFixed(0) })}</span>
+                        <b className={capacityUsed > 100 ? "risk" : ""}>
+                          {capacityUsed}%
+                        </b>
+                      </header>
+                      <div className="progress-track">
+                        <i
+                          style={{
+                            width: `${Math.min(100, capacityUsed)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="sprint-hours">
+                    <span>
+                      <small>{t("sprints.capacityHours", { capacity: "" }).replace(/[\d\s]/g, "")}</small>
+                      <b>{sprint.capacityHours.toFixed(1)}h</b>
+                    </span>
+                    <span>
+                      <small>{t("sprints.estimateHours", { hours: "" }).replace(/[\d\s]/g, "")}</small>
+                      <b>{sprint.estimateHours.toFixed(1)}h</b>
+                    </span>
+                    <span>
+                      <small>{t("sprints.actualHours", { hours: "" }).replace(/[\d\s]/g, "")}</small>
+                      <b>{sprint.actualHours.toFixed(1)}h</b>
+                    </span>
+                  </div>
+                  {sprint.canManage && (
+                    <footer>
+                      {sprint.status !== "completed" ? (
+                        <button
+                          type="button"
+                          onClick={() => void openPlanning(sprint)}
+                        >
+                          <ClipboardList size={14} /> {t("sprints.planTasks")}
+                        </button>
+                      ) : (
+                        <span>{t("projects.archivedBadge")}</span>
+                      )}
+                      <div>
+                        {sprint.status === "planned" && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={transitioningId === sprint.id}
+                              onClick={() =>
+                                void transitionSprint(sprint, "active")
+                              }
+                            >
+                              <Play size={14} /> {t("sprintStatuses.active")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(sprint)}
+                            >
+                              <Edit3 size={14} /> {t("common.edit")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteSprint(sprint)}
+                              aria-label={`${t("common.delete")} ${sprint.name}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                        {sprint.status === "active" && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={transitioningId === sprint.id}
+                              onClick={() =>
+                                void transitionSprint(sprint, "completed")
+                              }
+                            >
+                              <CheckCircle2 size={14} />{" "}
+                              {t("sprintStatuses.completed")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(sprint)}
+                            >
+                              <Edit3 size={14} /> {t("common.edit")}
+                            </button>
+                          </>
+                        )}
+                        {sprint.status === "completed" && (
+                          <button
+                            type="button"
+                            disabled={transitioningId === sprint.id}
+                            onClick={() =>
+                              void transitionSprint(sprint, "active")
+                            }
+                          >
+                            <RotateCcw size={14} /> {t("common.reset")}
+                          </button>
+                        )}
+                      </div>
+                    </footer>
+                  )}
+                </article>
+              );
+            })}
           </section>
         ) : (
-          <section className="entity-table-shell" aria-label="迭代列表">
+          <section className="entity-table-shell" aria-label={t("sprints.listView")}>
             <table className="entity-table sprint-entity-table">
               <thead>
                 <tr>
-                  <th>迭代</th>
-                  <th>状态</th>
-                  <th>周期</th>
-                  <th>任务进度</th>
-                  <th>容量占用</th>
-                  <th>工时 / 测试</th>
-                  <th>操作</th>
+                  <th>{t("sprints.nameLabel")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("sprints.startDate", { defaultValue: "周期" })}</th>
+                  <th>{t("common.progress")}</th>
+                  <th>{t("sprints.capacityLabel")}</th>
+                  <th>{t("common.hours")}</th>
+                  <th>{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedSprints.map((sprint) => {
                   const capacityUsed = sprint.capacityHours
-                    ? Math.round((sprint.estimateHours / sprint.capacityHours) * 100)
+                    ? Math.round(
+                        (sprint.estimateHours / sprint.capacityHours) * 100,
+                      )
                     : 0;
                   return (
                     <tr key={sprint.id}>
                       <td>
                         <div className="entity-title-cell">
-                          <i className="entity-color-dot" style={{ background: sprint.projectColor }} />
+                          <i
+                            className="entity-color-dot"
+                            style={{ background: sprint.projectColor }}
+                          />
                           <div>
-                            <small>{sprint.projectCode} · {sprint.projectName}</small>
+                            <small>
+                              {sprint.projectCode} · {sprint.projectName}
+                            </small>
                             <strong>{sprint.name}</strong>
-                            <span className="entity-description">{sprint.goal || "尚未填写本次迭代目标。"}</span>
+                            <span className="entity-description">
+                              {sprint.goal || t("common.none")}
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td><span className={`sprint-status sprint-${sprint.status}`}>{sprintStatusLabels[sprint.status]}</span></td>
+                      <td>
+                        <span
+                          className={`sprint-status sprint-${sprint.status}`}
+                        >
+                          {getSprintStatusLabel(sprint.status)}
+                        </span>
+                      </td>
                       <td>
                         <div className="entity-stacked-value">
-                          <span><CalendarRange size={12} /> {displayDate(sprint.startDate)}</span>
-                          <small>至 {displayDate(sprint.endDate)}</small>
+                          <span>
+                            <CalendarRange size={12} />{" "}
+                            {displayDate(sprint.startDate, locale)}
+                          </span>
+                          <small>至 {displayDate(sprint.endDate, locale)}</small>
                         </div>
                       </td>
                       <td>
                         <div className="entity-progress-cell">
-                          <span><small>{sprint.completedTaskCount}/{sprint.taskCount}</small><b>{sprint.progress}%</b></span>
-                          <div className="progress-track"><i style={{ width: `${sprint.progress}%`, background: sprint.projectColor }} /></div>
+                          <span>
+                            <small>
+                              {sprint.completedTaskCount}/{sprint.taskCount}
+                            </small>
+                            <b>{sprint.progress}%</b>
+                          </span>
+                          <div className="progress-track">
+                            <i
+                              style={{
+                                width: `${sprint.progress}%`,
+                                background: sprint.projectColor,
+                              }}
+                            />
+                          </div>
                         </div>
                       </td>
                       <td>
                         <div className="entity-progress-cell">
-                          <span><small>{sprint.estimateHours.toFixed(1)}/{sprint.capacityHours.toFixed(1)}h</small><b className={capacityUsed > 100 ? "risk" : ""}>{capacityUsed}%</b></span>
-                          <div className="progress-track"><i style={{ width: `${Math.min(100, capacityUsed)}%` }} /></div>
+                          <span>
+                            <small>
+                              {sprint.estimateHours.toFixed(1)}/
+                              {sprint.capacityHours.toFixed(1)}h
+                            </small>
+                            <b className={capacityUsed > 100 ? "risk" : ""}>
+                              {capacityUsed}%
+                            </b>
+                          </span>
+                          <div className="progress-track">
+                            <i
+                              style={{
+                                width: `${Math.min(100, capacityUsed)}%`,
+                              }}
+                            />
+                          </div>
                         </div>
                       </td>
                       <td>
                         <div className="entity-stacked-value">
-                          <span>实际 <b>{sprint.actualHours.toFixed(1)}h</b></span>
-                          <small>测试 {sprint.testedTaskCount}/{sprint.taskCount}</small>
+                          <span>
+                            {t("workbench.actualVsEstimateHours")}:{" "}
+                            <b>{sprint.actualHours.toFixed(1)}h</b>
+                          </span>
                         </div>
                       </td>
                       <td className="entity-actions-cell">
                         {sprint.canManage ? (
                           <div className="entity-actions">
                             {sprint.status !== "completed" && (
-                              <button type="button" onClick={() => void openPlanning(sprint)}><ClipboardList size={14} /> 规划</button>
+                              <button
+                                type="button"
+                                onClick={() => void openPlanning(sprint)}
+                              >
+                                <ClipboardList size={14} />{" "}
+                                {t("sprints.planTasks")}
+                              </button>
                             )}
                             {sprint.status === "planned" && (
                               <>
-                                <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><Play size={14} /> 启动</button>
-                                <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
-                                <button className="danger" type="button" onClick={() => void deleteSprint(sprint)} aria-label={`删除 ${sprint.name}`}><Trash2 size={14} /> 删除</button>
+                                <button
+                                  type="button"
+                                  disabled={transitioningId === sprint.id}
+                                  onClick={() =>
+                                    void transitionSprint(sprint, "active")
+                                  }
+                                >
+                                  <Play size={14} />{" "}
+                                  {t("sprintStatuses.active")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(sprint)}
+                                >
+                                  <Edit3 size={14} /> {t("common.edit")}
+                                </button>
+                                <button
+                                  className="danger"
+                                  type="button"
+                                  onClick={() => void deleteSprint(sprint)}
+                                  aria-label={`${t("common.delete")} ${sprint.name}`}
+                                >
+                                  <Trash2 size={14} /> {t("common.delete")}
+                                </button>
                               </>
                             )}
                             {sprint.status === "active" && (
                               <>
-                                <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "completed")}><CheckCircle2 size={14} /> 完成</button>
-                                <button type="button" onClick={() => openEdit(sprint)}><Edit3 size={14} /> 编辑</button>
+                                <button
+                                  type="button"
+                                  disabled={transitioningId === sprint.id}
+                                  onClick={() =>
+                                    void transitionSprint(sprint, "completed")
+                                  }
+                                >
+                                  <CheckCircle2 size={14} />{" "}
+                                  {t("sprintStatuses.completed")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(sprint)}
+                                >
+                                  <Edit3 size={14} /> {t("common.edit")}
+                                </button>
                               </>
                             )}
                             {sprint.status === "completed" && (
-                              <button type="button" disabled={transitioningId === sprint.id} onClick={() => void transitionSprint(sprint, "active")}><RotateCcw size={14} /> 重开</button>
+                              <button
+                                type="button"
+                                disabled={transitioningId === sprint.id}
+                                onClick={() =>
+                                  void transitionSprint(sprint, "active")
+                                }
+                              >
+                                <RotateCcw size={14} /> {t("common.reset")}
+                              </button>
                             )}
                           </div>
                         ) : (
@@ -650,7 +907,11 @@ export default function SprintManagement() {
           </section>
         )
       ) : (
-        <div className="module-empty large"><CalendarRange size={30} /><b>没有符合条件的迭代</b><span>创建迭代并规划任务范围。</span></div>
+        <div className="module-empty large">
+          <CalendarRange size={30} />
+          <b>{t("sprints.noMatches")}</b>
+          <span>{t("sprints.createFirstSprint")}</span>
+        </div>
       )}
 
       {!loading && filtered.length > 0 && (
@@ -658,7 +919,7 @@ export default function SprintManagement() {
           page={page}
           pageSize={pageSize}
           total={filtered.length}
-          itemLabel="个迭代"
+          itemLabel={t("sprints.itemUnit")}
           onPageChange={setPage}
           onPageSizeChange={changePageSize}
         />
@@ -666,21 +927,126 @@ export default function SprintManagement() {
 
       {formOpen && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal" role="dialog" aria-modal="true" aria-labelledby="sprint-form-title">
+          <section
+            className="workspace-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sprint-form-title"
+          >
             <header>
-              <div><span className="eyebrow">{editingId ? "编辑迭代" : "新迭代"}</span><h2 id="sprint-form-title">{editingId ? "更新迭代计划" : "创建一个交付周期"}</h2></div>
-              <button type="button" onClick={() => setFormOpen(false)} aria-label="关闭"><X size={18} /></button>
+              <div>
+                <span className="eyebrow">
+                  {editingId
+                    ? t("sprints.modalEditTitle")
+                    : t("sprints.modalCreateTitle")}
+                </span>
+                <h2 id="sprint-form-title">
+                  {editingId
+                    ? t("sprints.modalEditTitle")
+                    : t("sprints.modalCreateTitle")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormOpen(false)}
+                aria-label={t("common.close")}
+              >
+                <X size={18} />
+              </button>
             </header>
             <form onSubmit={saveSprint}>
               <div className="workspace-form-grid">
-                <label><span>所属项目</span><select required value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}><option value="">请选择</option>{projects.filter((project) => project.canManage).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}</select></label>
-                <label><span>迭代名称</span><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：Sprint 2026-08" /></label>
-                <label><span>团队容量（小时）</span><input type="number" min="0" step="1" value={form.capacityHours} onChange={(e) => setForm({ ...form, capacityHours: Number(e.target.value) })} /></label>
-                <label><span>开始日期</span><input required type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label>
-                <label><span>结束日期</span><input required type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label>
-                <label className="form-wide"><span>迭代目标</span><textarea rows={4} value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="描述本次迭代必须达成的业务或交付结果。" /></label>
+                <label>
+                  <span>{t("sprints.projectLabel")}</span>
+                  <select
+                    required
+                    value={form.projectId}
+                    onChange={(e) =>
+                      setForm({ ...form, projectId: e.target.value })
+                    }
+                  >
+                    <option value="">{t("sprints.selectProject")}</option>
+                    {projects
+                      .filter((project) => project.canManage)
+                      .map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.code} · {project.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{t("sprints.nameLabel")}</span>
+                  <input
+                    required
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm({ ...form, name: e.target.value })
+                    }
+                    placeholder={t("sprints.namePlaceholder")}
+                  />
+                </label>
+                <label>
+                  <span>{t("sprints.capacityLabel")}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.capacityHours}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        capacityHours: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("common.startDate")}</span>
+                  <input
+                    required
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) =>
+                      setForm({ ...form, startDate: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("common.dueDate")}</span>
+                  <input
+                    required
+                    type="date"
+                    value={form.endDate}
+                    onChange={(e) =>
+                      setForm({ ...form, endDate: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="form-wide">
+                  <span>{t("sprints.goalLabel")}</span>
+                  <textarea
+                    rows={4}
+                    value={form.goal}
+                    onChange={(e) =>
+                      setForm({ ...form, goal: e.target.value })
+                    }
+                    placeholder={t("sprints.goalPlaceholder")}
+                  />
+                </label>
               </div>
-              <footer><button type="button" onClick={() => setFormOpen(false)}>取消</button><button className="primary-action" type="submit" disabled={saving}>{saving ? "保存中…" : "保存迭代"}</button></footer>
+              <footer>
+                <button type="button" onClick={() => setFormOpen(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? t("common.saving") : t("common.save")}
+                </button>
+              </footer>
             </form>
           </section>
         </div>
@@ -688,14 +1054,38 @@ export default function SprintManagement() {
 
       {planningSprint && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal sprint-planning-modal" role="dialog" aria-modal="true" aria-labelledby="planning-title">
+          <section
+            className="workspace-modal sprint-planning-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="planning-title"
+          >
             <header>
-              <div><span className="eyebrow">迭代规划</span><h2 id="planning-title">{planningSprint.name}</h2></div>
-              <button type="button" onClick={() => setPlanningSprint(null)} aria-label="关闭"><X size={18} /></button>
+              <div>
+                <span className="eyebrow">{t("sprints.planModalTitle")}</span>
+                <h2 id="planning-title">{planningSprint.name}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlanningSprint(null)}
+                aria-label={t("common.close")}
+              >
+                <X size={18} />
+              </button>
             </header>
             <div className="planning-summary">
-              <span>已选择 {selectedTaskIds.length} 项</span>
-              <b>{candidateTasks.filter((task) => selectedTaskIds.includes(task.id)).reduce((sum, task) => sum + task.estimateHours, 0).toFixed(1)}h / {planningSprint.capacityHours.toFixed(1)}h</b>
+              <span>
+                {t("sprints.tasksCount", {
+                  count: selectedTaskIds.length,
+                })}
+              </span>
+              <b>
+                {candidateTasks
+                  .filter((task) => selectedTaskIds.includes(task.id))
+                  .reduce((sum, task) => sum + task.estimateHours, 0)
+                  .toFixed(1)}
+                h / {planningSprint.capacityHours.toFixed(1)}h
+              </b>
             </div>
             <div className="planning-task-list">
               {planningTaskPagination.pageItems.map((task) => {
@@ -711,13 +1101,20 @@ export default function SprintManagement() {
                       type="checkbox"
                       checked={selectedTaskIds.includes(task.id)}
                       disabled={belongsToOtherSprint}
-                      onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))}
+                      onChange={(event) =>
+                        setSelectedTaskIds((current) =>
+                          event.target.checked
+                            ? [...current, task.id]
+                            : current.filter((id) => id !== task.id),
+                        )
+                      }
                     />
                     <span>
                       <b>{task.title}</b>
                       <small>
-                        {taskStatusLabels[task.status]} · 预估 {task.estimateHours.toFixed(1)}h · 测试 {task.testerName ?? "待指派"}
-                        {belongsToOtherSprint ? ` · 已属于 ${task.sprintName ?? "其他迭代"}` : ""}
+                        {getTaskStatusLabel(task.status)} ·{" "}
+                        {t("workbench.actualVsEstimateHours")}:{" "}
+                        {task.estimateHours.toFixed(1)}h
                       </small>
                     </span>
                   </label>
@@ -729,17 +1126,36 @@ export default function SprintManagement() {
                 page={planningTaskPagination.page}
                 pageSize={planningTaskPagination.pageSize}
                 total={candidateTasks.length}
-                itemLabel="项任务"
+                itemLabel={t("workbench.portfolioHeading")}
                 onPageChange={planningTaskPagination.setPage}
                 onPageSizeChange={planningTaskPagination.changePageSize}
               />
             )}
-            <footer className="planning-footer"><button type="button" onClick={() => setPlanningSprint(null)}>取消</button><button className="primary-action" type="button" disabled={planningLoading} onClick={() => void savePlanning()}>{planningLoading ? "保存中…" : "保存任务范围"}</button></footer>
+            <footer className="planning-footer">
+              <button
+                type="button"
+                onClick={() => setPlanningSprint(null)}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                disabled={planningLoading}
+                onClick={() => void savePlanning()}
+              >
+                {planningLoading ? t("common.saving") : t("common.save")}
+              </button>
+            </footer>
           </section>
         </div>
       )}
 
-      {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
+      {notice && (
+        <div className="toast">
+          <CheckCircle2 size={16} /> {notice}
+        </div>
+      )}
     </div>
   );
 }

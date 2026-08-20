@@ -8,6 +8,7 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 const pageSizeOptions = [10, 30, 50, 100] as const;
 const maxCustomPageSize = 500;
@@ -51,6 +52,7 @@ function getVisiblePages(page: number, totalPages: number): number[] {
 /**
  * 为已在客户端加载的数据提供分页状态和当前页切片。
  *
+ * @template T 列表元素类型。
  * @param items 已完成筛选的完整列表。
  * @param initialPageSize 初始每页数量。
  * @return 当前页数据及分页控制方法。
@@ -69,7 +71,6 @@ export function useClientPagination<T>(items: T[], initialPageSize = 10) {
    * 切换到指定有效页码。
    *
    * @param nextPage 目标页码。
-   * @return 无返回值。
    */
   const setPage = useCallback(
     (nextPage: number) => {
@@ -82,7 +83,6 @@ export function useClientPagination<T>(items: T[], initialPageSize = 10) {
    * 修改每页数量并回到第一页。
    *
    * @param nextPageSize 新的每页数量。
-   * @return 无返回值。
    */
   const changePageSize = useCallback((nextPageSize: number) => {
     setPageSize(normalizePageSize(nextPageSize));
@@ -91,8 +91,6 @@ export function useClientPagination<T>(items: T[], initialPageSize = 10) {
 
   /**
    * 将分页重置为第一页。
-   *
-   * @return 无返回值。
    */
   const resetPage = useCallback(() => {
     setPageState(1);
@@ -110,14 +108,15 @@ export function useClientPagination<T>(items: T[], initialPageSize = 10) {
 }
 
 /**
- * 渲染统一的页码、每页数量和自定义数量控制区。
+ * 渲染支持中英文国际化的页码、每页数量和自定义数量控制区。
  *
- * @param page 当前页码。
- * @param pageSize 当前每页数量。
- * @param total 列表总条目数。
- * @param itemLabel 条目单位名称。
- * @param onPageChange 页码变化回调。
- * @param onPageSizeChange 每页数量变化回调。
+ * @param props 分页组件属性。
+ * @param props.page 当前页码。
+ * @param props.pageSize 当前每页数量。
+ * @param props.total 列表总条目数。
+ * @param props.itemLabel 条目单位名称。
+ * @param props.onPageChange 页码变化回调。
+ * @param props.onPageSizeChange 每页数量变化回调。
  * @return 分页控制组件。
  */
 export default function PaginationControls({
@@ -128,6 +127,7 @@ export default function PaginationControls({
   onPageChange,
   onPageSizeChange,
 }: PaginationControlsProps) {
+  const { t } = useTranslation();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const [customMode, setCustomMode] = useState(
@@ -140,7 +140,6 @@ export default function PaginationControls({
    * 处理预设或自定义每页数量选择。
    *
    * @param event 下拉选择事件。
-   * @return 无返回值。
    */
   function handlePageSizeSelect(event: ChangeEvent<HTMLSelectElement>) {
     if (event.target.value === "custom") {
@@ -156,7 +155,6 @@ export default function PaginationControls({
    * 应用用户输入的自定义每页数量。
    *
    * @param event 自定义数量表单提交事件。
-   * @return 无返回值。
    */
   function applyCustomPageSize(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -166,20 +164,22 @@ export default function PaginationControls({
   }
 
   return (
-    <nav className="list-pagination" aria-label={`${itemLabel}列表分页`}>
+    <nav className="list-pagination" aria-label={t("pagination.pageOf", { page: currentPage, totalPages })}>
       <div className="pagination-summary">
-        <span>共 {total} {itemLabel}</span>
+        <span>{t("pagination.totalSummary", { total, label: itemLabel })}</span>
         <label>
-          <span>每页显示</span>
+          <span>{t("pagination.perPage")}</span>
           <select
-            aria-label="选择每页显示数量"
+            aria-label={t("pagination.selectPageSizeAria")}
             value={customMode ? "custom" : String(pageSize)}
             onChange={handlePageSizeSelect}
           >
             {pageSizeOptions.map((option) => (
-              <option value={option} key={option}>{option}</option>
+              <option value={option} key={option}>
+                {option}
+              </option>
             ))}
-            <option value="custom">自定义</option>
+            <option value="custom">{t("pagination.custom")}</option>
           </select>
         </label>
         {customMode && (
@@ -189,18 +189,18 @@ export default function PaginationControls({
               min="1"
               max={maxCustomPageSize}
               value={customValue}
-              aria-label="自定义每页显示数量"
+              aria-label={t("pagination.customPageSizeAria")}
               onChange={(event) => setCustomValue(event.target.value)}
             />
-            <button type="submit">应用</button>
+            <button type="submit">{t("pagination.apply")}</button>
           </form>
         )}
       </div>
       <div className="pagination-pages">
-        <span>第 {currentPage} / {totalPages} 页</span>
+        <span>{t("pagination.pageOf", { page: currentPage, totalPages })}</span>
         <button
           type="button"
-          aria-label="上一页"
+          aria-label={t("pagination.prevPage")}
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
         >
@@ -210,7 +210,7 @@ export default function PaginationControls({
           <button
             className={pageNumber === currentPage ? "active" : ""}
             type="button"
-            aria-label={`第 ${pageNumber} 页`}
+            aria-label={t("pagination.pageNumberAria", { page: pageNumber })}
             aria-current={pageNumber === currentPage ? "page" : undefined}
             onClick={() => onPageChange(pageNumber)}
             key={pageNumber}
@@ -220,7 +220,7 @@ export default function PaginationControls({
         ))}
         <button
           type="button"
-          aria-label="下一页"
+          aria-label={t("pagination.nextPage")}
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
         >

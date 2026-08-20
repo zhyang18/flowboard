@@ -30,13 +30,14 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import type { SprintStatus, TaskPriority, TaskStatus, UserRole } from "@/db/schema";
-import {
-  sprintStatusLabels,
-  taskPriorityLabels,
-  taskStatusLabels,
-  taskStatuses,
-} from "@/lib/workspace";
+import type {
+  SprintStatus,
+  TaskPriority,
+  TaskStatus,
+  UserRole,
+} from "@/db/schema";
+import { taskStatuses } from "@/lib/workspace";
+import { useTranslation } from "@/lib/i18n";
 import AttachmentEditor from "../attachment-editor";
 import { useDashboardDialog } from "../dashboard-dialog-provider";
 import AttachmentViewer from "../attachment-viewer";
@@ -116,7 +117,7 @@ type WorkLogForm = {
   workDate: string;
   durationHours: number;
   note: string;
-}
+};
 
 type WorkLogRecord = {
   id: string;
@@ -133,35 +134,47 @@ type WorkLogRecord = {
 /**
  * 突出展示任务所属项目、迭代名称和迭代状态。
  *
- * @param task 包含项目与迭代归属信息的任务。
- * @param compact 是否使用列表视图的紧凑布局。
+ * @param props 组件属性。
+ * @param props.task 包含项目与迭代归属信息的任务。
+ * @param props.compact 是否使用列表视图的紧凑布局。
  * @return 任务项目和迭代归属信息块。
  */
-function TaskContext({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
+function TaskContext({
+  task,
+  compact = false,
+}: {
+  task: BoardTask;
+  compact?: boolean;
+}) {
+  const { t, getSprintStatusLabel } = useTranslation();
   const sprintState = task.sprintStatus ?? "unplanned";
   return (
     <div className={`task-context${compact ? " compact" : ""}`}>
       <div
         className="task-project-context"
         style={{ borderLeftColor: task.projectColor }}
-        title={`所属项目：${task.projectCode} · ${task.projectName}`}
+        title={`${t("projects.codeLabel")}：${task.projectCode} · ${task.projectName}`}
       >
         <span className="task-project-code">{task.projectCode}</span>
         <span>
-          <small>所属项目</small>
+          <small>{t("sprints.projectLabel")}</small>
           <strong>{task.projectName}</strong>
         </span>
       </div>
       <div
         className={`task-sprint-context sprint-${sprintState}`}
-        title={`所属迭代：${task.sprintName ?? "未规划迭代"}`}
+        title={`${t("board.sprintLabel")}：${task.sprintName ?? t("board.noSprint")}`}
       >
         <CalendarRange size={15} />
         <span>
-          <small>所属迭代</small>
-          <strong>{task.sprintName ?? "未规划迭代"}</strong>
+          <small>{t("board.sprintLabel")}</small>
+          <strong>{task.sprintName ?? t("board.noSprint")}</strong>
         </span>
-        <em>{task.sprintStatus ? sprintStatusLabels[task.sprintStatus] : "待规划"}</em>
+        <em>
+          {task.sprintStatus
+            ? getSprintStatusLabel(task.sprintStatus)
+            : t("common.unassigned")}
+        </em>
       </div>
     </div>
   );
@@ -181,9 +194,64 @@ const emptyForm: TaskForm = {
 };
 
 /**
- * 创建任务看板工时登记表单的默认值。
+ * 将接口日期转换为日期输入框值。
  *
- * @return 默认使用今天和一小时投入的工时表单。
+ * @param value ISO 日期字符串。
+ * @return YYYY-MM-DD 字符串。
+ */
+function dateInput(value: string | null): string {
+  return value ? value.slice(0, 10) : "";
+}
+
+/**
+ * 格式化任务截止日期。
+ *
+ * @param value ISO 日期字符串。
+ * @param locale 当前语言环境。
+ * @param noneLabel 未设置时的占位文本。
+ * @return 本地化日期显示。
+ */
+function dateLabel(
+  value: string | null,
+  locale: string,
+  noneLabel: string,
+): string {
+  if (!value) return noneLabel;
+  try {
+    return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * 格式化任务完成时间。
+ *
+ * @param value ISO 时间字符串。
+ * @param locale 当前语言环境。
+ * @return 本地化完成时间。
+ */
+function completedLabel(value: string | null, locale: string): string {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * 创建工时表单初始值。
+ *
+ * @return 初始工时表单数据。
  */
 function createWorkLogForm(): WorkLogForm {
   return {
@@ -194,52 +262,24 @@ function createWorkLogForm(): WorkLogForm {
 }
 
 /**
- * 将接口日期转换成日期输入框值。
+ * 渲染支持中英文国际化的任务看板、五阶段流转与工时维护。
  *
- * @param value ISO 日期或空值。
- * @return YYYY-MM-DD 字符串。
- */
-function dateInput(value: string | null) {
-  return value ? value.slice(0, 10) : "";
-}
-
-/**
- * 格式化任务截止日期。
- *
- * @param value ISO 日期或空值。
- * @return 简短日期文本。
- */
-function dateLabel(value: string | null) {
-  if (!value) return "未排期";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
-}
-
-/**
- * 格式化任务实际完成时间。
- *
- * @param value ISO 完成时间或空值。
- * @return 日期时间文本。
- */
-function completedLabel(value: string | null) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-/**
- * 渲染按项目权限过滤的任务看板。
- *
- * @param initialTaskId 从消息提醒带入并需要聚焦的任务 ID。
+ * @param props 组件属性。
+ * @param props.initialTaskId 初始化直达高亮任务 ID。
  * @return 任务看板组件。
  */
-export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: string }) {
+export default function TaskBoard({
+  initialTaskId,
+}: {
+  initialTaskId?: string;
+}) {
+  const {
+    t,
+    locale,
+    getTaskStatusLabel,
+    getTaskPriorityLabel,
+    getSprintStatusLabel,
+  } = useTranslation();
   const { confirm } = useDashboardDialog();
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -281,6 +321,8 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   const [workLogs, setWorkLogs] = useState<WorkLogRecord[]>([]);
   const [loadingWorkLogs, setLoadingWorkLogs] = useState(false);
 
+  const priorities: TaskPriority[] = ["urgent", "high", "medium", "low"];
+
   /**
    * 按当前筛选条件加载任务以及可选的开发和测试负责人。
    *
@@ -298,7 +340,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     if (initialTaskId) params.set("taskId", initialTaskId);
     if (query.trim()) params.set("query", query.trim());
     try {
-      const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/tasks?${params}`, {
+        cache: "no-store",
+      });
       const result = (await response.json()) as {
         data?: BoardTask[];
         projects?: ProjectOption[];
@@ -311,7 +355,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         defaultEstimateHours?: number;
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "任务加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setTasks(result.data ?? []);
       setProjects(result.projects ?? []);
       setAssignees(result.assignees ?? []);
@@ -322,11 +366,22 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       setCanCreate(Boolean(result.canCreate));
       setDefaultEstimateHours(result.defaultEstimateHours ?? 4);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "任务加载失败。");
+      setError(
+        loadError instanceof Error ? loadError.message : t("common.error"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [assigneeId, initialTaskId, projectId, query, sprintId, statusFilter, testerId]);
+  }, [
+    assigneeId,
+    initialTaskId,
+    projectId,
+    query,
+    sprintId,
+    statusFilter,
+    t,
+    testerId,
+  ]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), query ? 240 : 0);
@@ -340,7 +395,13 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
   }, [notice]);
 
   useEffect(() => {
-    if (!initialTaskId || loading || !tasks.some((task) => task.id === initialTaskId)) return;
+    if (
+      !initialTaskId ||
+      loading ||
+      !tasks.some((task) => task.id === initialTaskId)
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       document.getElementById(`task-${initialTaskId}`)?.scrollIntoView({
         behavior: "smooth",
@@ -363,21 +424,31 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     return [...tasks].sort((a, b) => {
       let result = 0;
       if (sortField === "task") {
-        result = a.title.localeCompare(b.title, "zh-CN");
+        result = a.title.localeCompare(b.title, locale === "zh" ? "zh-CN" : "en-US");
         if (result === 0) {
           const priorityRank = { urgent: 4, high: 3, medium: 2, low: 1 };
-          result = (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0);
+          result =
+            (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0);
         }
       } else if (sortField === "project") {
-        result = a.projectName.localeCompare(b.projectName, "zh-CN");
-        if (result === 0) {
-          result = (a.sprintName || "").localeCompare(b.sprintName || "", "zh-CN");
-        }
+        result = a.projectName.localeCompare(
+          b.projectName,
+          locale === "zh" ? "zh-CN" : "en-US",
+        );
       } else if (sortField === "status") {
-        const statusRank = { backlog: 0, todo: 1, in_progress: 2, review: 3, done: 4 };
+        const statusRank = {
+          backlog: 0,
+          todo: 1,
+          in_progress: 2,
+          review: 3,
+          done: 4,
+        };
         result = (statusRank[a.status] ?? 0) - (statusRank[b.status] ?? 0);
       } else if (sortField === "assignee") {
-        result = (a.assigneeName || "zzz").localeCompare(b.assigneeName || "zzz", "zh-CN");
+        result = (a.assigneeName || "zzz").localeCompare(
+          b.assigneeName || "zzz",
+          locale === "zh" ? "zh-CN" : "en-US",
+        );
       } else if (sortField === "dueDate") {
         const aTime = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
         const bTime = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
@@ -390,7 +461,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       }
       return sortOrder === "asc" ? result : -result;
     });
-  }, [tasks, sortField, sortOrder]);
+  }, [tasks, sortField, sortOrder, locale]);
 
   const {
     page,
@@ -405,7 +476,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * 触发任务列表表头排序。
    *
    * @param field 目标排序字段名称。
-   * @return 无返回值。
    */
   function handleSort(field: string) {
     if (sortField === field) {
@@ -438,12 +508,12 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * 在可写项目中打开新建任务表单。
    *
    * @param status 默认任务状态。
-   * @return 无返回值。
    */
   function openCreate(status: TaskStatus = "todo") {
     const writableProject =
-      projects.find((project) => project.id === projectId && project.canCreateTask) ??
-      projects.find((project) => project.canCreateTask);
+      projects.find(
+        (project) => project.id === projectId && project.canCreateTask,
+      ) ?? projects.find((project) => project.canCreateTask);
     const selectedAssignee = assignees.find(
       (assignee) =>
         assignee.id === assigneeId &&
@@ -476,11 +546,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         )
           ? currentUserId
           : testers.find(
-          (tester) =>
-            tester.id === testerId &&
-            writableProject &&
-            tester.projectIds.includes(writableProject.id),
-          )?.id ?? "",
+              (tester) =>
+                tester.id === testerId &&
+                writableProject &&
+                tester.projectIds.includes(writableProject.id),
+            )?.id ?? "",
     });
     setModalOpen(true);
   }
@@ -489,7 +559,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * 使用现有任务数据打开编辑表单。
    *
    * @param task 待编辑任务。
-   * @return 无返回值。
    */
   function openEdit(task: BoardTask) {
     setEditingId(task.id);
@@ -522,21 +591,28 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     try {
       const editingTask = tasks.find((task) => task.id === editingId);
       const payload =
-        editingTask && currentUserRole === "tester" && !editingTask.canManageProject
+        editingTask &&
+        currentUserRole === "tester" &&
+        !editingTask.canManageProject
           ? { status: form.status }
           : { ...form, attachmentDraftToken };
-      const response = await fetch(editingId ? `/api/tasks/${editingId}` : "/api/tasks", {
-        method: editingId ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(
+        editingId ? `/api/tasks/${editingId}` : "/api/tasks",
+        {
+          method: editingId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "任务保存失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setModalOpen(false);
-      setNotice(editingId ? "任务已更新" : "任务已创建");
+      setNotice(t("board.saveSuccess"));
       await loadTasks();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "任务保存失败。");
+      setError(
+        saveError instanceof Error ? saveError.message : t("common.error"),
+      );
     } finally {
       setSaving(false);
     }
@@ -574,13 +650,15 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         body: JSON.stringify({ status }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "状态更新失败。");
-      setNotice(`任务已移至“${taskStatusLabels[status]}”`);
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("board.statusUpdatedSuccess"));
       await loadTasks();
     } catch (updateError) {
       setTasks(previous);
       setError(
-        updateError instanceof Error ? updateError.message : "状态更新失败。",
+        updateError instanceof Error
+          ? updateError.message
+          : t("common.error"),
       );
     }
   }
@@ -590,7 +668,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    *
    * @param event 拖放事件。
    * @param status 目标状态。
-   * @return 无返回值。
    */
   function onDrop(event: DragEvent<HTMLElement>, status: TaskStatus) {
     event.preventDefault();
@@ -598,7 +675,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
     setDraggedId(null);
     setDropStatus(null);
     const task = tasks.find((item) => item.id === taskId);
-    if (task?.canChangeStatus && task.status !== status) void updateStatus(task.id, status);
+    if (task?.canChangeStatus && task.status !== status) {
+      void updateStatus(task.id, status);
+    }
   }
 
   /**
@@ -609,20 +688,24 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    */
   async function deleteTask(task: BoardTask) {
     const confirmed = await confirm({
-      title: "删除任务",
-      message: `确定删除任务“${task.title}”吗？此操作无法撤销。`,
-      confirmLabel: "删除任务",
+      title: t("common.delete"),
+      message: `${t("common.delete")} "${task.title}"?`,
+      confirmLabel: t("common.delete"),
       tone: "danger",
     });
     if (!confirmed) return;
     try {
-      const response = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: "DELETE",
+      });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "删除失败。");
-      setNotice("任务已删除");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("board.deleteSuccess"));
       await loadTasks();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "删除失败。");
+      setError(
+        deleteError instanceof Error ? deleteError.message : t("common.error"),
+      );
     }
   }
 
@@ -630,7 +713,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * 打开测试不通过表单并初始化独立附件草稿。
    *
    * @param task 待测试打回的任务。
-   * @return 无返回值。
    */
   function openReject(task: BoardTask): void {
     setRejectingTask(task);
@@ -645,7 +727,9 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * @param event 测试打回表单提交事件。
    * @return 提交流程完成后的 Promise。
    */
-  async function rejectTask(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function rejectTask(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault();
     if (!rejectingTask) return;
     setRejecting(true);
@@ -660,17 +744,26 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "任务打回失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setRejectingTask(null);
-      setNotice("测试结果已记录，任务已退回开发中并通知开发负责人");
+      setNotice(t("board.statusUpdatedSuccess"));
       await loadTasks();
     } catch (rejectError) {
-      setError(rejectError instanceof Error ? rejectError.message : "任务打回失败。");
+      setError(
+        rejectError instanceof Error
+          ? rejectError.message
+          : t("common.error"),
+      );
     } finally {
       setRejecting(false);
     }
   }
 
+  /**
+   * 加载指定任务的历史工时记录。
+   *
+   * @param taskId 任务 ID。
+   */
   async function loadWorkLogs(taskId: string) {
     setLoadingWorkLogs(true);
     try {
@@ -679,8 +772,8 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       if (response.ok) {
         setWorkLogs(result.data || []);
       }
-    } catch (e) {
-      console.error("加载历史工时失败", e);
+    } catch {
+      // 忽略非关键错误
     } finally {
       setLoadingWorkLogs(false);
     }
@@ -690,7 +783,6 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
    * 在任务看板内打开指定任务的工时登记表单。
    *
    * @param task 待登记实际工时的任务。
-   * @return 无返回值。
    */
   function openWorkLog(task: BoardTask) {
     setLoggingTask(task);
@@ -717,96 +809,157 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         body: JSON.stringify({ taskId: loggingTask.id, ...workLogForm }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "工时登记失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setLoggingTask(null);
-      setNotice("工时已登记并同步到任务");
+      setNotice(t("time.saveSuccess"));
       await loadTasks();
     } catch (workLogError) {
       setError(
-        workLogError instanceof Error ? workLogError.message : "工时登记失败。",
+        workLogError instanceof Error
+          ? workLogError.message
+          : t("common.error"),
       );
     } finally {
       setLoggingWork(false);
     }
   }
 
+  /**
+   * 删除工时记录并重新汇总任务实际工时。
+   *
+   * @param logId 工时记录 ID。
+   */
   async function deleteWorkLog(logId: string) {
-    if (!window.confirm("确定要删除这条工时记录吗？对应的任务实际工时也会扣减。")) return;
+    const confirmed = await confirm({
+      title: t("time.deleteConfirmTitle"),
+      message: t("time.deleteConfirmMsg"),
+      confirmLabel: t("common.delete"),
+      tone: "danger",
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/work-logs/${logId}`, { method: "DELETE" });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "删除失败");
+        throw new Error(err.error || t("common.error"));
       }
-      setNotice("工时记录已删除");
+      setNotice(t("time.deleteSuccess"));
       if (loggingTask) loadWorkLogs(loggingTask.id);
       await loadTasks();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "删除失败");
+      setError(e instanceof Error ? e.message : t("common.error"));
     }
   }
 
   const editingTask = tasks.find((task) => task.id === editingId);
   const testerStatusOnly = Boolean(
-    editingTask && currentUserRole === "tester" && !editingTask.canManageProject,
+    editingTask &&
+      currentUserRole === "tester" &&
+      !editingTask.canManageProject,
   );
-  const formProject = projects.find((project) => project.id === form.projectId);
+  const formProject = projects.find(
+    (project) => project.id === form.projectId,
+  );
 
   return (
     <div className="module-page board-page">
       <section className="module-heading board-heading">
         <div>
-          <span className="eyebrow">任务执行中心</span>
-          <h2>从需求进入到按时完成</h2>
-          <p>拖动任务完成流转，持续核对预估工时、实际投入与完成时间。</p>
+          <span className="eyebrow">{t("board.eyebrow")}</span>
+          <h2>{t("board.heading")}</h2>
+          <p>{t("board.description")}</p>
         </div>
         {canCreate && (
-          <button className="primary-action module-primary" type="button" onClick={() => openCreate()}>
-            <Plus size={16} /> 新建任务
+          <button
+            className="primary-action module-primary"
+            type="button"
+            onClick={() => openCreate()}
+          >
+            <Plus size={16} /> {t("board.newTask")}
           </button>
         )}
       </section>
 
       <section className="board-summary">
-        <div><small>任务总数</small><b>{tasks.length}</b></div>
-        <div><small>预估工时</small><b>{metrics.estimate.toFixed(1)}h</b></div>
-        <div><small>实际投入</small><b>{metrics.actual.toFixed(1)}h</b></div>
-        <div className={metrics.overdue ? "risk" : ""}><small>已逾期</small><b>{metrics.overdue}</b></div>
+        <div>
+          <small>{t("workbench.portfolioHeading")}</small>
+          <b>{tasks.length}</b>
+        </div>
+        <div>
+          <small>{t("settings.defaultEstimate")}</small>
+          <b>{metrics.estimate.toFixed(1)}h</b>
+        </div>
+        <div>
+          <small>{t("login.showcaseActualHours")}</small>
+          <b>{metrics.actual.toFixed(1)}h</b>
+        </div>
+        <div className={metrics.overdue ? "risk" : ""}>
+          <small>{t("workbench.overdueTasks")}</small>
+          <b>{metrics.overdue}</b>
+        </div>
       </section>
 
       <section className="module-toolbar board-toolbar">
         <label className="module-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => {
-            setQuery(event.target.value);
-            resetPage();
-          }} placeholder="搜索任务标题或描述" />
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              resetPage();
+            }}
+            placeholder={t("board.searchPlaceholder")}
+          />
         </label>
         <label className="module-select">
-          <span className="select-color" style={{ background: projects.find((project) => project.id === projectId)?.color ?? "#9aa6b2" }} />
-          <select value={projectId} onChange={(event) => {
-            setProjectId(event.target.value);
-            setSprintId("");
-            resetPage();
-          }}>
-            <option value="">全部项目</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+          <span
+            className="select-color"
+            style={{
+              background:
+                projects.find((project) => project.id === projectId)?.color ??
+                "#9aa6b2",
+            }}
+          />
+          <select
+            value={projectId}
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setSprintId("");
+              resetPage();
+            }}
+          >
+            <option value="">{t("board.filterProject")}</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} · {project.name}
+              </option>
+            ))}
           </select>
           <ChevronDown size={14} />
         </label>
         <label className="module-select">
           <CalendarRange size={14} />
-          <select value={sprintId} onChange={(event) => {
-            setSprintId(event.target.value);
-            resetPage();
-          }}>
-            <option value="">全部迭代</option>
-            <option value="unplanned">未规划</option>
+          <select
+            value={sprintId}
+            onChange={(event) => {
+              setSprintId(event.target.value);
+              resetPage();
+            }}
+          >
+            <option value="">{t("board.filterSprint")}</option>
+            <option value="unplanned">{t("board.noSprint")}</option>
             {sprints
-              .filter((sprint) => !projectId || sprint.projectId === projectId)
+              .filter(
+                (sprint) => !projectId || sprint.projectId === projectId,
+              )
               .map((sprint) => (
                 <option key={sprint.id} value={sprint.id}>
-                  {projects.find((project) => project.id === sprint.projectId)?.code} · {sprint.name}
+                  {
+                    projects.find(
+                      (project) => project.id === sprint.projectId,
+                    )?.code
+                  }{" "}
+                  · {sprint.name}
                 </option>
               ))}
           </select>
@@ -814,47 +967,70 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </label>
         <label className="module-select">
           <UserRound size={14} />
-          <select value={assigneeId} onChange={(event) => {
-            setAssigneeId(event.target.value);
-            resetPage();
-          }}>
-            <option value="">全部开发负责人</option>
-            {assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+          <select
+            value={assigneeId}
+            onChange={(event) => {
+              setAssigneeId(event.target.value);
+              resetPage();
+            }}
+          >
+            <option value="">{t("board.filterAssignee")}</option>
+            {assignees.map((assignee) => (
+              <option key={assignee.id} value={assignee.id}>
+                {assignee.name}
+              </option>
+            ))}
           </select>
           <ChevronDown size={14} />
         </label>
         <label className="module-select">
           <ShieldCheck size={14} />
-          <select value={testerId} onChange={(event) => {
-            setTesterId(event.target.value);
-            resetPage();
-          }}>
-            <option value="">全部测试负责人</option>
-            {testers.map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
+          <select
+            value={testerId}
+            onChange={(event) => {
+              setTesterId(event.target.value);
+              resetPage();
+            }}
+          >
+            <option value="">{t("board.filterTester")}</option>
+            {testers.map((tester) => (
+              <option key={tester.id} value={tester.id}>
+                {tester.name}
+              </option>
+            ))}
           </select>
           <ChevronDown size={14} />
         </label>
         <label className="module-select">
           <ListFilter size={14} />
-          <select value={statusFilter} onChange={(event) => {
-            setStatusFilter(event.target.value);
-            resetPage();
-          }}>
-            <option value="">全部状态</option>
-            <option value="todo">待处理 (待办)</option>
-            <option value="in_progress">进行中 (开发中)</option>
-            <option value="review">待测试 (待验收)</option>
-            <option value="done">已完成</option>
+          <select
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              resetPage();
+            }}
+          >
+            <option value="">{t("projects.allStatuses")}</option>
+            {taskStatuses.map((st) => (
+              <option value={st} key={st}>
+                {getTaskStatusLabel(st)}
+              </option>
+            ))}
           </select>
           <ChevronDown size={14} />
         </label>
         <div className="toolbar-view-options">
-          <span className="toolbar-result">显示 {tasks.length} 项任务</span>
+          <span className="toolbar-result">
+            {t("pagination.totalSummary", {
+              total: tasks.length,
+              label: t("workbench.portfolioHeading"),
+            })}
+          </span>
           <ViewModeToggle
             value={viewMode}
             onChange={setViewMode}
-            cardLabel="切换为任务看板布局"
-            listLabel="切换为任务列表布局"
+            cardLabel={t("viewMode.card")}
+            listLabel={t("viewMode.list")}
           />
         </div>
       </section>
@@ -862,14 +1038,21 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
       {error && <div className="module-alert">{error}</div>}
 
       {loading ? (
-        <div className="module-loading">正在加载任务看板…</div>
+        <div className="module-loading">{t("common.loading")}</div>
       ) : viewMode === "card" ? (
-        <section className="kanban-scroll" aria-label="任务看板">
+        <section className="kanban-scroll" aria-label={t("board.heading")}>
           <div className="kanban-board">
             {taskStatuses.map((status) => {
-              const allColumnTasks = tasks.filter((task) => task.status === status);
-              const columnTasks = paginatedTasks.filter((task) => task.status === status);
-              const columnEstimate = allColumnTasks.reduce((sum, task) => sum + task.estimateHours, 0);
+              const allColumnTasks = tasks.filter(
+                (task) => task.status === status,
+              );
+              const columnTasks = paginatedTasks.filter(
+                (task) => task.status === status,
+              );
+              const columnEstimate = allColumnTasks.reduce(
+                (sum, task) => sum + task.estimateHours,
+                0,
+              );
               return (
                 <section
                   className={`kanban-column column-${status} ${dropStatus === status ? "drop-target" : ""}`}
@@ -879,7 +1062,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                     setDropStatus(status);
                   }}
                   onDragLeave={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                    if (
+                      !event.currentTarget.contains(
+                        event.relatedTarget as Node,
+                      )
+                    ) {
                       setDropStatus(null);
                     }
                   }}
@@ -888,7 +1075,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                   <header className="kanban-column-header">
                     <div>
                       <i />
-                      <b>{taskStatusLabels[status]}</b>
+                      <b>{getTaskStatusLabel(status)}</b>
                       <span>{allColumnTasks.length}</span>
                     </div>
                     <small>{columnEstimate.toFixed(1)}h</small>
@@ -907,7 +1094,10 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                           onDragStart={(event) => {
                             setDraggedId(task.id);
                             event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData("text/task-id", task.id);
+                            event.dataTransfer.setData(
+                              "text/task-id",
+                              task.id,
+                            );
                           }}
                           onDragEnd={() => {
                             setDraggedId(null);
@@ -915,70 +1105,159 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                           }}
                         >
                           <header>
-                            <span className={`task-priority priority-${task.priority}`}>
-                              {taskPriorityLabels[task.priority]}
+                            <span
+                              className={`task-priority priority-${task.priority}`}
+                            >
+                              {getTaskPriorityLabel(task.priority)}
                             </span>
-                            {(task.canEdit || task.canChangeStatus || task.canReject || task.canDelete) && (
+                            {(task.canEdit ||
+                              task.canChangeStatus ||
+                              task.canReject ||
+                              task.canDelete) && (
                               <div className="task-card-actions">
-                                {task.canEdit && <button type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={13} /></button>}
-                                {task.canReject && <button type="button" onClick={() => openReject(task)} aria-label={`测试打回 ${task.title}`}><Undo2 size={13} /></button>}
-                                {task.canDelete && <button type="button" onClick={() => deleteTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={13} /></button>}
-                                {task.canChangeStatus && <GripVertical size={14} />}
+                                {task.canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEdit(task)}
+                                    aria-label={`${t("common.edit")} ${task.title}`}
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                )}
+                                {task.canReject && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openReject(task)}
+                                    aria-label={`Reject ${task.title}`}
+                                  >
+                                    <Undo2 size={13} />
+                                  </button>
+                                )}
+                                {task.canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteTask(task)}
+                                    aria-label={`${t("common.delete")} ${task.title}`}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                                {task.canChangeStatus && (
+                                  <GripVertical size={14} />
+                                )}
                               </div>
                             )}
                           </header>
                           <TaskContext task={task} />
                           <h3>{task.title}</h3>
-                          {task.description && <RichTextContent value={task.description} />}
-                          {task.attachmentCount > 0 && <AttachmentViewer owner={{ type: "taskId", id: task.id }} />}
+                          {task.description && (
+                            <RichTextContent value={task.description} />
+                          )}
+                          {task.attachmentCount > 0 && (
+                            <AttachmentViewer
+                              owner={{ type: "taskId", id: task.id }}
+                            />
+                          )}
                           <div className="task-time-grid">
-                            <span><small>预估</small><b>{task.estimateHours.toFixed(1)}h</b></span>
-                            <span><small>实际</small><b>{task.actualHours.toFixed(1)}h</b></span>
+                            <span>
+                              <small>
+                                {t("board.taskCard.estimate", {
+                                  hours: task.estimateHours.toFixed(1),
+                                })}
+                              </small>
+                            </span>
+                            <span>
+                              <small>
+                                {t("board.taskCard.actual", {
+                                  hours: task.actualHours.toFixed(1),
+                                })}
+                              </small>
+                            </span>
                             <span className={overrun ? "risk" : ""}>
-                              <small>{overrun ? "已超出" : "剩余"}</small>
-                              <b>{Math.abs(remaining).toFixed(1)}h</b>
+                              <small>
+                                {overrun
+                                  ? t("workbench.hoursOverrun", {
+                                      hours: Math.abs(remaining).toFixed(1),
+                                    })
+                                  : t("workbench.hoursRemaining", {
+                                      hours: Math.max(0, remaining).toFixed(1),
+                                    })}
+                              </small>
                             </span>
                           </div>
                           {task.canLogWork && (
-                            <button className="task-log-work" type="button" onClick={() => openWorkLog(task)}>
+                            <button
+                              className="task-log-work"
+                              type="button"
+                              onClick={() => openWorkLog(task)}
+                            >
                               <Clock3 size={12} />
                               {task.status === "done" && task.actualHours <= 0
-                                ? "补录实际工时"
-                                : "登记实际工时"}
+                                ? t("board.taskCard.supplementHours")
+                                : t("time.logTimeButton")}
                             </button>
                           )}
                           <footer>
                             <span className={overdue ? "risk" : ""}>
-                              {overdue ? <CircleAlert size={13} /> : <CalendarClock size={13} />}
-                              {dateLabel(task.dueDate)}
+                              {overdue ? (
+                                <CircleAlert size={13} />
+                              ) : (
+                                <CalendarClock size={13} />
+                              )}
+                              {dateLabel(
+                                task.dueDate,
+                                locale,
+                                t("common.none"),
+                              )}
                             </span>
                             <span className="task-people">
-                              <span className="task-assignee" title={`开发：${task.assigneeName ?? "待认领"}`}>
+                              <span
+                                className="task-assignee"
+                                title={`Dev: ${task.assigneeName ?? t("common.unclaimed")}`}
+                              >
                                 {task.assigneeName?.slice(0, 1) ?? "?"}
                               </span>
-                              <span className="task-assignee task-tester" title={`测试：${task.testerName ?? "待指派"}`}>
-                                {task.testerName?.slice(0, 1) ?? "测"}
+                              <span
+                                className="task-assignee task-tester"
+                                title={`QA: ${task.testerName ?? t("common.unassigned")}`}
+                              >
+                                {task.testerName?.slice(0, 1) ?? "T"}
                               </span>
                             </span>
                           </footer>
                           {task.completedAt && (
                             <div className="completed-time">
-                              <CheckCircle2 size={12} /> 完成于 {completedLabel(task.completedAt)}
+                              <CheckCircle2 size={12} />{" "}
+                              {completedLabel(task.completedAt, locale)}
                             </div>
                           )}
                           {task.latestRejection && (
                             <div className="task-rejection-note">
-                              <header><Undo2 size={12} /> 上次测试未通过 · {task.latestRejection.testerName}</header>
-                              <RichTextContent value={task.latestRejection.reason} />
-                              <AttachmentViewer owner={{ type: "rejectionId", id: task.latestRejection.id }} />
+                              <header>
+                                <Undo2 size={12} />{" "}
+                                {task.latestRejection.testerName}
+                              </header>
+                              <RichTextContent
+                                value={task.latestRejection.reason}
+                              />
+                              <AttachmentViewer
+                                owner={{
+                                  type: "rejectionId",
+                                  id: task.latestRejection.id,
+                                }}
+                              />
                             </div>
                           )}
                         </article>
                       );
                     })}
                     {canCreate && (
-                      <button className="add-column-task" type="button" onClick={() => openCreate(status)}>
-                        <Plus size={14} /> 添加任务
+                      <button
+                        className="add-column-task"
+                        type="button"
+                        onClick={() => openCreate(status)}
+                      >
+                        <Plus size={14} /> {t("board.newTask")}
                       </button>
                     )}
                   </div>
@@ -988,71 +1267,67 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           </div>
         </section>
       ) : tasks.length ? (
-        <section className="entity-table-shell" aria-label="任务列表">
+        <section className="entity-table-shell" aria-label={t("board.heading")}>
           <table className="entity-table task-entity-table">
             <thead>
               <tr>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("task")}
-                  title="点击按任务标题/优先级排序"
                 >
                   <div className="th-content">
-                    <span>任务</span>
+                    <span>{t("workbench.portfolioHeading")}</span>
                     {renderSortIcon("task")}
                   </div>
                 </th>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("project")}
-                  title="点击按所属项目/迭代排序"
                 >
                   <div className="th-content">
-                    <span>项目 / 迭代</span>
+                    <span>
+                      {t("sprints.projectLabel")} / {t("board.sprintLabel")}
+                    </span>
                     {renderSortIcon("project")}
                   </div>
                 </th>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("status")}
-                  title="点击按任务状态排序"
                 >
                   <div className="th-content">
-                    <span>状态</span>
+                    <span>{t("common.status")}</span>
                     {renderSortIcon("status")}
                   </div>
                 </th>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("assignee")}
-                  title="点击按负责人排序"
                 >
                   <div className="th-content">
-                    <span>负责人</span>
+                    <span>{t("projects.owner")}</span>
                     {renderSortIcon("assignee")}
                   </div>
                 </th>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("dueDate")}
-                  title="点击按截止时间/完成时间排序"
                 >
                   <div className="th-content">
-                    <span>截止 / 完成</span>
+                    <span>{t("common.dueDate")}</span>
                     {renderSortIcon("dueDate")}
                   </div>
                 </th>
                 <th
                   className="sortable-th"
                   onClick={() => handleSort("hours")}
-                  title="点击按预估/实际工时排序"
                 >
                   <div className="th-content">
-                    <span>工时</span>
+                    <span>{t("common.hours")}</span>
                     {renderSortIcon("hours")}
                   </div>
                 </th>
-                <th className="actions-column">操作</th>
+                <th className="actions-column">{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1074,68 +1349,144 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
                     <td>
                       <div className="task-list-title">
                         <div>
-                          <span className={`task-priority priority-${task.priority}`}>
-                            {taskPriorityLabels[task.priority]}
+                          <span
+                            className={`task-priority priority-${task.priority}`}
+                          >
+                            {getTaskPriorityLabel(task.priority)}
                           </span>
                         </div>
                         <strong>{task.title}</strong>
-                        {task.description && <RichTextContent value={task.description} />}
-                        {task.attachmentCount > 0 && <AttachmentViewer owner={{ type: "taskId", id: task.id }} />}
+                        {task.description && (
+                          <RichTextContent value={task.description} />
+                        )}
+                        {task.attachmentCount > 0 && (
+                          <AttachmentViewer
+                            owner={{ type: "taskId", id: task.id }}
+                          />
+                        )}
                         {task.latestRejection && (
-                          <span className="entity-rejection"><Undo2 size={11} /> 上次测试未通过 · {task.latestRejection.testerName}</span>
+                          <span className="entity-rejection">
+                            <Undo2 size={11} />{" "}
+                            {task.latestRejection.testerName}
+                          </span>
                         )}
                       </div>
                     </td>
-                    <td><TaskContext task={task} compact /></td>
+                    <td>
+                      <TaskContext task={task} compact />
+                    </td>
                     <td>
                       {task.canChangeStatus ? (
                         <select
                           className={`task-status-select status-${task.status}`}
                           value={task.status}
-                          aria-label={`修改 ${task.title} 的状态`}
-                          onChange={(event) => void updateStatus(task.id, event.target.value as TaskStatus)}
+                          aria-label={`Update status of ${task.title}`}
+                          onChange={(event) =>
+                            void updateStatus(
+                              task.id,
+                              event.target.value as TaskStatus,
+                            )
+                          }
                         >
-                          {taskStatuses.map((status) => <option value={status} key={status}>{taskStatusLabels[status]}</option>)}
+                          {taskStatuses.map((st) => (
+                            <option value={st} key={st}>
+                              {getTaskStatusLabel(st)}
+                            </option>
+                          ))}
                         </select>
                       ) : (
-                        <span className={`task-status status-${task.status}`}>{taskStatusLabels[task.status]}</span>
+                        <span className={`task-status status-${task.status}`}>
+                          {getTaskStatusLabel(task.status)}
+                        </span>
                       )}
                     </td>
                     <td>
                       <div className="entity-stacked-value">
-                        <span><UserRound size={12} /> 开发：{task.assigneeName ?? "待认领"}</span>
-                        <small><ShieldCheck size={12} /> 测试：{task.testerName ?? "待指派"}</small>
+                        <span>
+                          <UserRound size={12} />{" "}
+                          {task.assigneeName ?? t("common.unclaimed")}
+                        </span>
+                        <small>
+                          <ShieldCheck size={12} />{" "}
+                          {task.testerName ?? t("common.unassigned")}
+                        </small>
                       </div>
                     </td>
                     <td>
                       <div className="entity-stacked-value">
                         <span className={task.overdue ? "risk" : ""}>
-                          {task.overdue ? <CircleAlert size={12} /> : <CalendarClock size={12} />}
-                          {dateLabel(task.dueDate)}
+                          {task.overdue ? (
+                            <CircleAlert size={12} />
+                          ) : (
+                            <CalendarClock size={12} />
+                          )}
+                          {dateLabel(
+                            task.dueDate,
+                            locale,
+                            t("common.none"),
+                          )}
                         </span>
-                        <small>{task.completedAt ? `完成于 ${completedLabel(task.completedAt)}` : "尚未完成"}</small>
+                        <small>
+                          {task.completedAt
+                            ? completedLabel(task.completedAt, locale)
+                            : t("common.none")}
+                        </small>
                       </div>
                     </td>
                     <td>
                       <div className="entity-stacked-value">
-                        <span>预估 / 实际 <b>{task.estimateHours.toFixed(1)} / {task.actualHours.toFixed(1)}h</b></span>
-                        <small className={overrun ? "risk" : ""}>{overrun ? "已超出" : "剩余"} {Math.abs(remaining).toFixed(1)}h</small>
+                        <span>
+                          <b>
+                            {task.estimateHours.toFixed(1)} /{" "}
+                            {task.actualHours.toFixed(1)}h
+                          </b>
+                        </span>
+                        <small className={overrun ? "risk" : ""}>
+                          {overrun
+                            ? t("workbench.hoursOverrun", {
+                                hours: Math.abs(remaining).toFixed(1),
+                              })
+                            : t("workbench.hoursRemaining", {
+                                hours: Math.max(0, remaining).toFixed(1),
+                              })}
+                        </small>
                       </div>
                     </td>
                     <td className="entity-actions-cell">
                       {hasActions ? (
                         <div className="entity-actions">
                           {task.canLogWork && (
-                            <button type="button" onClick={() => openWorkLog(task)}><Clock3 size={14} /> 登记</button>
+                            <button
+                              type="button"
+                              onClick={() => openWorkLog(task)}
+                            >
+                              <Clock3 size={14} /> {t("time.logTimeButton")}
+                            </button>
                           )}
                           {task.canEdit && (
-                            <button type="button" onClick={() => openEdit(task)}><Edit3 size={14} /> 编辑</button>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(task)}
+                            >
+                              <Edit3 size={14} /> {t("common.edit")}
+                            </button>
                           )}
                           {task.canReject && (
-                            <button type="button" onClick={() => openReject(task)}><Undo2 size={14} /> 打回</button>
+                            <button
+                              type="button"
+                              onClick={() => openReject(task)}
+                            >
+                              <Undo2 size={14} /> {t("board.rejectConfirmButton")}
+                            </button>
                           )}
                           {task.canDelete && (
-                            <button className="danger" type="button" onClick={() => void deleteTask(task)}><Trash2 size={14} /> 删除</button>
+                            <button
+                              className="danger"
+                              type="button"
+                              onClick={() => void deleteTask(task)}
+                            >
+                              <Trash2 size={14} /> {t("common.delete")}
+                            </button>
                           )}
                         </div>
                       ) : (
@@ -1149,7 +1500,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           </table>
         </section>
       ) : (
-        <div className="module-empty large"><ClipboardList size={30} /><b>没有符合条件的任务</b><span>调整筛选条件，或创建一项新任务。</span></div>
+        <div className="module-empty large">
+          <ClipboardList size={30} />
+          <b>{t("projects.noMatches")}</b>
+          <span>{t("projects.createFirstProject")}</span>
+        </div>
       )}
 
       {!loading && tasks.length > 0 && (
@@ -1157,7 +1512,7 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
           page={page}
           pageSize={pageSize}
           total={tasks.length}
-          itemLabel="项任务"
+          itemLabel={t("workbench.portfolioHeading")}
           onPageChange={setPage}
           onPageSizeChange={changePageSize}
         />
@@ -1165,136 +1520,269 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
 
       {modalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+          <section
+            className="workspace-modal task-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-modal-title"
+          >
             <header>
               <div>
-                <span className="eyebrow">{editingId ? "编辑任务" : "新任务"}</span>
-                <h2 id="task-modal-title">{editingId ? "更新任务资料" : "创建一项可交付任务"}</h2>
+                <span className="eyebrow">
+                  {editingId
+                    ? t("board.modalEditTitle")
+                    : t("board.modalCreateTitle")}
+                </span>
+                <h2 id="task-modal-title">
+                  {editingId
+                    ? t("board.modalEditTitle")
+                    : t("board.modalCreateTitle")}
+                </h2>
               </div>
-              <button type="button" onClick={() => setModalOpen(false)} aria-label="关闭"><X size={18} /></button>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                aria-label={t("common.close")}
+              >
+                <X size={18} />
+              </button>
             </header>
             <form onSubmit={saveTask}>
               <div className="workspace-form-grid">
                 <label className="form-wide">
-                  <span>任务标题</span>
-                  <input required disabled={testerStatusOnly} maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="清晰描述需要完成的结果" />
+                  <span>{t("board.titleLabel")}</span>
+                  <input
+                    required
+                    disabled={testerStatusOnly}
+                    maxLength={160}
+                    value={form.title}
+                    onChange={(e) =>
+                      setForm({ ...form, title: e.target.value })
+                    }
+                    placeholder={t("board.titlePlaceholder")}
+                  />
                 </label>
                 <label>
-                  <span>所属项目</span>
-                  <select required disabled={Boolean(editingId && !editingTask?.canManageProject)} value={form.projectId} onChange={(e) => {
-                    const nextProjectId = e.target.value;
-                    setForm({
-                      ...form,
-                      projectId: nextProjectId,
-                      sprintId: "",
-                      assigneeId: assignees.some(
-                        (assignee) =>
-                          assignee.id === form.assigneeId &&
-                          assignee.projectIds.includes(nextProjectId),
-                      )
-                        ? form.assigneeId
-                        : "",
-                      testerId: testers.some(
-                        (tester) =>
-                          tester.id === form.testerId &&
-                          tester.projectIds.includes(nextProjectId),
-                      )
-                        ? form.testerId
-                        : "",
-                    });
-                  }}>
-                    <option value="">请选择</option>
-                    {projects.filter((project) =>
-                      editingId
-                        ? project.id === form.projectId || project.canManage
-                        : project.canCreateTask,
-                    ).map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>所属迭代</span>
+                  <span>{t("sprints.projectLabel")}</span>
                   <select
-                    disabled={Boolean(editingId && !editingTask?.canManageProject)}
-                    value={form.sprintId}
-                    onChange={(e) => setForm({ ...form, sprintId: e.target.value })}
+                    required
+                    disabled={Boolean(
+                      editingId && !editingTask?.canManageProject,
+                    )}
+                    value={form.projectId}
+                    onChange={(e) => {
+                      const nextProjectId = e.target.value;
+                      setForm({
+                        ...form,
+                        projectId: nextProjectId,
+                        sprintId: "",
+                        assigneeId: assignees.some(
+                          (assignee) =>
+                            assignee.id === form.assigneeId &&
+                            assignee.projectIds.includes(nextProjectId),
+                        )
+                          ? form.assigneeId
+                          : "",
+                        testerId: testers.some(
+                          (tester) =>
+                            tester.id === form.testerId &&
+                            tester.projectIds.includes(nextProjectId),
+                        )
+                          ? form.testerId
+                          : "",
+                      });
+                    }}
                   >
-                    <option value="">未规划</option>
-                    {sprints
-                      .filter(
-                        (sprint) =>
-                          sprint.projectId === form.projectId && sprint.status !== "completed",
+                    <option value="">{t("projects.selectOwner")}</option>
+                    {projects
+                      .filter((project) =>
+                        editingId
+                          ? project.id === form.projectId || project.canManage
+                          : project.canCreateTask,
                       )
-                      .map((sprint) => (
-                        <option key={sprint.id} value={sprint.id}>
-                          {sprint.name} · {sprintStatusLabels[sprint.status]}
+                      .map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.code} · {project.name}
                         </option>
                       ))}
                   </select>
                 </label>
                 <label>
-                  <span>开发负责人</span>
-                  <select disabled={Boolean(editingId && !editingTask?.canManageProject)} value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
-                    <option value="">待认领</option>
-                    {assignees.filter((assignee) =>
-                      assignee.projectIds.includes(form.projectId) &&
-                      (formProject?.canManage || assignee.id === currentUserId),
-                    ).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+                  <span>{t("board.sprintLabel")}</span>
+                  <select
+                    disabled={Boolean(
+                      editingId && !editingTask?.canManageProject,
+                    )}
+                    value={form.sprintId}
+                    onChange={(e) =>
+                      setForm({ ...form, sprintId: e.target.value })
+                    }
+                  >
+                    <option value="">{t("board.noSprint")}</option>
+                    {sprints
+                      .filter(
+                        (sprint) =>
+                          sprint.projectId === form.projectId &&
+                          sprint.status !== "completed",
+                      )
+                      .map((sprint) => (
+                        <option key={sprint.id} value={sprint.id}>
+                          {sprint.name} · {getSprintStatusLabel(sprint.status)}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label>
-                  <span>测试负责人</span>
-                  <select disabled={editingId ? !editingTask?.canManageProject : currentUserRole === "tester"} value={form.testerId} onChange={(e) => setForm({ ...form, testerId: e.target.value })}>
-                    <option value="">待指派</option>
-                    {testers.filter((tester) => tester.projectIds.includes(form.projectId)).map((tester) => <option key={tester.id} value={tester.id}>{tester.name}</option>)}
+                  <span>{t("board.assigneeLabel")}</span>
+                  <select
+                    disabled={Boolean(
+                      editingId && !editingTask?.canManageProject,
+                    )}
+                    value={form.assigneeId}
+                    onChange={(e) =>
+                      setForm({ ...form, assigneeId: e.target.value })
+                    }
+                  >
+                    <option value="">{t("common.unclaimed")}</option>
+                    {assignees
+                      .filter(
+                        (assignee) =>
+                          assignee.projectIds.includes(form.projectId) &&
+                          (formProject?.canManage ||
+                            assignee.id === currentUserId),
+                      )
+                      .map((assignee) => (
+                        <option key={assignee.id} value={assignee.id}>
+                          {assignee.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label>
-                  <span>任务状态</span>
-                  <select disabled={Boolean(editingId && !editingTask?.canChangeStatus)} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}>
-                    {taskStatuses.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}
+                  <span>{t("board.testerLabel")}</span>
+                  <select
+                    disabled={
+                      editingId
+                        ? !editingTask?.canManageProject
+                        : currentUserRole === "tester"
+                    }
+                    value={form.testerId}
+                    onChange={(e) =>
+                      setForm({ ...form, testerId: e.target.value })
+                    }
+                  >
+                    <option value="">{t("common.unassigned")}</option>
+                    {testers
+                      .filter((tester) =>
+                        tester.projectIds.includes(form.projectId),
+                      )
+                      .map((tester) => (
+                        <option key={tester.id} value={tester.id}>
+                          {tester.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label>
-                  <span>优先级</span>
-                  <select disabled={testerStatusOnly} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
-                    {Object.entries(taskPriorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  <span>{t("board.statusLabel")}</span>
+                  <select
+                    disabled={Boolean(
+                      editingId && !editingTask?.canChangeStatus,
+                    )}
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm({ ...form, status: e.target.value as TaskStatus })
+                    }
+                  >
+                    {taskStatuses.map((st) => (
+                      <option key={st} value={st}>
+                        {getTaskStatusLabel(st)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label>
-                  <span>预估工时（小时）</span>
-                  <input disabled={testerStatusOnly} type="number" min="0" step="0.5" value={form.estimateHours} onChange={(e) => setForm({ ...form, estimateHours: Number(e.target.value) })} />
+                  <span>{t("board.priorityLabel")}</span>
+                  <select
+                    disabled={testerStatusOnly}
+                    value={form.priority}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        priority: e.target.value as TaskPriority,
+                      })
+                    }
+                  >
+                    {priorities.map((p) => (
+                      <option key={p} value={p}>
+                        {getTaskPriorityLabel(p)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
-                  <span>实际工时（小时）</span>
+                  <span>{t("board.estimateHoursLabel")}</span>
+                  <input
+                    disabled={testerStatusOnly}
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={form.estimateHours}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        estimateHours: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("board.actualHoursLabel")}</span>
                   <input
                     type="number"
-                    value={tasks.find((task) => task.id === editingId)?.actualHours ?? 0}
+                    value={
+                      tasks.find((task) => task.id === editingId)?.actualHours ??
+                      0
+                    }
                     disabled
                     readOnly
                   />
                 </label>
                 <label>
-                  <span>截止日期</span>
-                  <input disabled={testerStatusOnly} type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                  <span>{t("common.dueDate")}</span>
+                  <input
+                    disabled={testerStatusOnly}
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) =>
+                      setForm({ ...form, dueDate: e.target.value })
+                    }
+                  />
                 </label>
                 <AttachmentEditor
                   draftToken={attachmentDraftToken}
-                  owner={editingId ? { type: "taskId", id: editingId } : undefined}
+                  owner={
+                    editingId ? { type: "taskId", id: editingId } : undefined
+                  }
                   value={form.description}
-                  onChange={(description) => setForm({ ...form, description })}
-                  label="任务说明与附件"
-                  placeholder="补充验收标准、背景或注意事项；上传图片后会插入预览。"
+                  onChange={(description) =>
+                    setForm({ ...form, description })
+                  }
+                  label={t("board.descriptionLabel")}
+                  placeholder={t("board.descriptionPlaceholder")}
                   disabled={testerStatusOnly}
                 />
               </div>
-              <div className="time-form-hint">
-                <Clock3 size={15} />
-                <span>开发负责人推进任务执行；进入待评审后由指定测试负责人验收或打回。实际工时由开发负责人在任务看板登记并自动汇总。</span>
-              </div>
               <footer>
-                <button type="button" onClick={() => setModalOpen(false)}>取消</button>
-                <button className="primary-action" type="submit" disabled={saving}>
-                  {saving ? "保存中…" : editingId ? "保存修改" : "创建任务"}
+                <button type="button" onClick={() => setModalOpen(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? t("common.saving") : t("common.save")}
                 </button>
               </footer>
             </form>
@@ -1304,26 +1792,49 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
 
       {rejectingTask && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal task-reject-modal" role="dialog" aria-modal="true" aria-labelledby="task-reject-title">
+          <section
+            className="workspace-modal task-reject-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-reject-title"
+          >
             <header>
               <div>
-                <span className="eyebrow">测试不通过</span>
-                <h2 id="task-reject-title">打回：{rejectingTask.title}</h2>
+                <span className="eyebrow">{t("board.rejectReasonTitle")}</span>
+                <h2 id="task-reject-title">{rejectingTask.title}</h2>
               </div>
-              <button type="button" onClick={() => setRejectingTask(null)} aria-label="关闭"><X size={18} /></button>
+              <button
+                type="button"
+                onClick={() => setRejectingTask(null)}
+                aria-label={t("common.close")}
+              >
+                <X size={18} />
+              </button>
             </header>
             <form onSubmit={rejectTask}>
               <AttachmentEditor
                 draftToken={rejectionDraftToken}
                 value={rejectionReason}
                 onChange={setRejectionReason}
-                label="不通过原因与附件"
-                placeholder="说明复现步骤、实际结果和期望结果；可上传截图或其他附件。"
+                label={t("board.rejectReasonTitle")}
+                placeholder={t("board.rejectReasonPlaceholder")}
               />
-              <div className="time-form-hint"><Undo2 size={15} /><span>提交后任务会从“待评审”退回“开发中”，并通知开发负责人。</span></div>
               <footer>
-                <button type="button" onClick={() => setRejectingTask(null)}>取消</button>
-                <button className="primary-action" type="submit" disabled={rejecting}>{rejecting ? "提交中…" : "确认打回"}</button>
+                <button
+                  type="button"
+                  onClick={() => setRejectingTask(null)}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={rejecting}
+                >
+                  {rejecting
+                    ? t("common.saving")
+                    : t("board.rejectConfirmButton")}
+                </button>
               </footer>
             </form>
           </section>
@@ -1332,55 +1843,175 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
 
       {loggingTask && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal task-work-log-modal" role="dialog" aria-modal="true" aria-labelledby="task-work-log-title">
+          <section
+            className="workspace-modal task-work-log-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-work-log-title"
+          >
             <header>
               <div>
-                <span className="eyebrow">{loggingTask.status === "done" && loggingTask.actualHours <= 0 ? "补录工时" : "登记工时"}</span>
-                <h2 id="task-work-log-title">记录实际投入</h2>
+                <span className="eyebrow">{t("time.logTimeButton")}</span>
+                <h2 id="task-work-log-title">{loggingTask.title}</h2>
               </div>
-              <button type="button" onClick={() => setLoggingTask(null)} aria-label="关闭"><X size={18} /></button>
+              <button
+                type="button"
+                onClick={() => setLoggingTask(null)}
+                aria-label={t("common.close")}
+              >
+                <X size={18} />
+              </button>
             </header>
             <form onSubmit={saveWorkLog}>
               {error && <div className="module-alert">{error}</div>}
               <div className="workspace-form-grid">
-                <div className="task-work-log-context form-wide">
-                  <span className="project-mark" style={{ background: loggingTask.projectColor }}>{loggingTask.projectCode.slice(0, 2)}</span>
-                  <div><small>{loggingTask.projectCode} · {loggingTask.projectName}</small><b>{loggingTask.title}</b></div>
-                </div>
-                <label><span>工作日期</span><input required type="date" value={workLogForm.workDate} onChange={(event) => setWorkLogForm({ ...workLogForm, workDate: event.target.value })} /></label>
-                <label><span>实际工时（小时）</span><input required type="number" min="0.1" max="24" step="0.1" value={workLogForm.durationHours} onChange={(event) => setWorkLogForm({ ...workLogForm, durationHours: Number(event.target.value) })} /></label>
-                <label className="form-wide"><span>工作说明</span><textarea rows={4} maxLength={500} value={workLogForm.note} onChange={(event) => setWorkLogForm({ ...workLogForm, note: event.target.value })} placeholder="简要说明完成了什么、遇到什么问题。" /></label>
+                <label>
+                  <span>{t("time.dateLabel")}</span>
+                  <input
+                    required
+                    type="date"
+                    value={workLogForm.workDate}
+                    onChange={(event) =>
+                      setWorkLogForm({
+                        ...workLogForm,
+                        workDate: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("time.hoursLabel")}</span>
+                  <input
+                    required
+                    type="number"
+                    min="0.1"
+                    max="24"
+                    step="0.1"
+                    value={workLogForm.durationHours}
+                    onChange={(event) =>
+                      setWorkLogForm({
+                        ...workLogForm,
+                        durationHours: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label className="form-wide">
+                  <span>{t("time.workDescriptionLabel")}</span>
+                  <textarea
+                    rows={4}
+                    maxLength={500}
+                    value={workLogForm.note}
+                    onChange={(event) =>
+                      setWorkLogForm({
+                        ...workLogForm,
+                        note: event.target.value,
+                      })
+                    }
+                    placeholder={t("time.workDescriptionPlaceholder")}
+                  />
+                </label>
               </div>
-              <div className="time-form-hint"><UserRound size={15} /><span>实际工时仅允许该任务当前指定的开发负责人本人登记，保存后会自动更新任务实际工时。</span></div>
-              <footer><button type="button" onClick={() => setLoggingTask(null)}>取消</button><button className="primary-action" type="submit" disabled={loggingWork}>{loggingWork ? "保存中…" : "保存工时"}</button></footer>
+              <footer>
+                <button
+                  type="button"
+                  onClick={() => setLoggingTask(null)}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={loggingWork}
+                >
+                  {loggingWork ? t("common.saving") : t("common.save")}
+                </button>
+              </footer>
             </form>
-            <div className="work-logs-history" style={{ padding: '0 20px 20px', marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
-              <h3 style={{ fontSize: '14px', marginBottom: '10px' }}>历史记录</h3>
+            <div
+              className="work-logs-history"
+              style={{
+                padding: "0 20px 20px",
+                marginTop: "20px",
+                borderTop: "1px solid var(--border)",
+                paddingTop: "15px",
+              }}
+            >
+              <h3 style={{ fontSize: "14px", marginBottom: "10px" }}>
+                {t("board.workLogsTab")}
+              </h3>
               {loadingWorkLogs ? (
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>加载中...</div>
+                <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                  {t("common.loading")}
+                </div>
               ) : workLogs.length === 0 ? (
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>暂无工时记录。</div>
+                <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                  {t("time.noLogsEmpty")}
+                </div>
               ) : (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: 0,
+                    margin: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
                   {workLogs.map((log) => (
-                    <li key={log.id} style={{ fontSize: '13px', padding: '10px', background: 'var(--bg-subtle)', borderRadius: '6px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <li
+                      key={log.id}
+                      style={{
+                        fontSize: "13px",
+                        padding: "10px",
+                        background: "var(--bg-subtle)",
+                        borderRadius: "6px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: "4px",
+                        }}
+                      >
                         <div>
                           <strong>{log.user.name}</strong>
-                          <span style={{ margin: '0 8px', color: 'var(--text-muted)' }}>{log.workDate}</span>
-                          <span style={{ color: 'var(--brand)' }}>{log.durationHours}h</span>
+                          <span
+                            style={{
+                              margin: "0 8px",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            {log.workDate}
+                          </span>
+                          <span style={{ color: "var(--brand)" }}>
+                            {log.durationHours}h
+                          </span>
                         </div>
                         {log.user.id === currentUserId && (
                           <button
                             type="button"
                             onClick={() => deleteWorkLog(log.id)}
-                            style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', padding: 0 }}
+                            style={{
+                              color: "var(--danger)",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              padding: 0,
+                            }}
                           >
-                            删除
+                            {t("common.delete")}
                           </button>
                         )}
                       </div>
-                      {log.note && <div style={{ color: 'var(--text-muted)' }}>{log.note}</div>}
+                      {log.note && (
+                        <div style={{ color: "var(--text-muted)" }}>
+                          {log.note}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1390,7 +2021,11 @@ export default function TaskBoard({ initialTaskId = "" }: { initialTaskId?: stri
         </div>
       )}
 
-      {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
+      {notice && (
+        <div className="toast">
+          <CheckCircle2 size={16} /> {notice}
+        </div>
+      )}
     </div>
   );
 }

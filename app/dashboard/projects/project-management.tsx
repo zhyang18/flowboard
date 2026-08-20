@@ -24,7 +24,7 @@ import {
   type FormEvent,
 } from "react";
 import type { ProjectStatus, UserStatus } from "@/db/schema";
-import { projectStatusLabels } from "@/lib/workspace";
+import { useTranslation } from "@/lib/i18n";
 import AttachmentEditor from "../attachment-editor";
 import AttachmentViewer from "../attachment-viewer";
 import { useDashboardDialog } from "../dashboard-dialog-provider";
@@ -73,7 +73,14 @@ type ProjectForm = {
   dueDate: string;
 };
 
-const colors = ["#2f7df6", "#7657d9", "#13a47b", "#f08a35", "#d64c64", "#1e9cad"];
+const colors = [
+  "#2f7df6",
+  "#7657d9",
+  "#13a47b",
+  "#f08a35",
+  "#d64c64",
+  "#1e9cad",
+];
 
 const emptyForm: ProjectForm = {
   name: "",
@@ -93,7 +100,7 @@ const emptyForm: ProjectForm = {
  * @param value ISO 日期或空值。
  * @return YYYY-MM-DD 字符串。
  */
-function dateInput(value: string | null) {
+function dateInput(value: string | null): string {
   return value ? value.slice(0, 10) : "";
 }
 
@@ -101,23 +108,34 @@ function dateInput(value: string | null) {
  * 格式化项目卡片日期。
  *
  * @param value ISO 日期或空值。
- * @return 中文日期文本。
+ * @param locale 当前语言环境。
+ * @param noneLabel 未设置时的占位文本。
+ * @return 本地化日期文本。
  */
-function displayDate(value: string | null) {
-  if (!value) return "未设置";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
+function displayDate(
+  value: string | null,
+  locale: string,
+  noneLabel: string,
+): string {
+  if (!value) return noneLabel;
+  try {
+    return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 /**
- * 渲染项目组合、成员关系和项目维护表单。
+ * 渲染支持中英文国际化的项目组合、成员关系与项目维护表单。
  *
  * @return 项目管理组件。
  */
 export default function ProjectManagement() {
+  const { t, locale, getProjectStatusLabel } = useTranslation();
   const { confirm, prompt } = useDashboardDialog();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [owners, setOwners] = useState<Person[]>([]);
@@ -138,6 +156,13 @@ export default function ProjectManagement() {
   const [attachmentDraftToken, setAttachmentDraftToken] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const projectStatusList: ProjectStatus[] = [
+    "planning",
+    "active",
+    "paused",
+    "completed",
+  ];
+
   /**
    * 加载当前用户可见项目和可选成员。
    *
@@ -155,17 +180,19 @@ export default function ProjectManagement() {
         canCreate?: boolean;
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "项目加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setProjects(result.data ?? []);
       setOwners(result.owners ?? []);
       setPeople(result.people ?? []);
       setCanCreate(Boolean(result.canCreate));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "项目加载失败。");
+      setError(
+        loadError instanceof Error ? loadError.message : t("common.error"),
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadProjects(), 0);
@@ -186,10 +213,14 @@ export default function ProjectManagement() {
         project.name.toLowerCase().includes(normalized) ||
         project.code.toLowerCase().includes(normalized) ||
         project.ownerName.toLowerCase().includes(normalized);
-      const matchesScope = scope === "archived" ? project.archived : !project.archived;
-      return matchesQuery && matchesScope && (!status || project.status === status);
+      const matchesScope =
+        scope === "archived" ? project.archived : !project.archived;
+      return (
+        matchesQuery && matchesScope && (!status || project.status === status)
+      );
     });
   }, [projects, query, scope, status]);
+
   const {
     page,
     pageSize,
@@ -215,8 +246,6 @@ export default function ProjectManagement() {
 
   /**
    * 打开新建项目表单。
-   *
-   * @return 无返回值。
    */
   function openCreate() {
     setEditingId(null);
@@ -234,7 +263,6 @@ export default function ProjectManagement() {
    * 使用现有项目数据打开编辑表单。
    *
    * @param project 待编辑项目。
-   * @return 无返回值。
    */
   function openEdit(project: ProjectRecord) {
     setEditingId(project.id);
@@ -273,12 +301,14 @@ export default function ProjectManagement() {
         },
       );
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "项目保存失败。");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
       setModalOpen(false);
-      setNotice(editingId ? "项目已更新" : "项目已创建");
+      setNotice(t("projects.saveSuccess"));
       await loadProjects();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "项目保存失败。");
+      setError(
+        saveError instanceof Error ? saveError.message : t("common.error"),
+      );
     } finally {
       setSaving(false);
     }
@@ -292,9 +322,9 @@ export default function ProjectManagement() {
    */
   async function archiveProject(project: ProjectRecord) {
     const confirmed = await confirm({
-      title: "归档项目",
-      message: `确定归档项目“${project.name}”吗？项目的任务、迭代和工时数据都会保留。`,
-      confirmLabel: "归档项目",
+      title: t("projects.archiveConfirmTitle"),
+      message: t("projects.archiveConfirmMsg", { name: project.name }),
+      confirmLabel: t("projects.archiveProject"),
       tone: "danger",
     });
     if (!confirmed) return;
@@ -304,13 +334,15 @@ export default function ProjectManagement() {
         method: "DELETE",
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "归档失败。");
-      setNotice("项目已归档");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("projects.archiveSuccess"));
       setScope("archived");
       await loadProjects();
     } catch (archiveError) {
       setError(
-        archiveError instanceof Error ? archiveError.message : "归档失败。",
+        archiveError instanceof Error
+          ? archiveError.message
+          : t("common.error"),
       );
     }
   }
@@ -323,9 +355,9 @@ export default function ProjectManagement() {
    */
   async function restoreProject(project: ProjectRecord) {
     const confirmed = await confirm({
-      title: "恢复项目",
-      message: `确定恢复项目“${project.name}”吗？恢复后可以继续维护任务和工时。`,
-      confirmLabel: "恢复项目",
+      title: t("projects.restoreConfirmTitle"),
+      message: t("projects.restoreConfirmMsg", { name: project.name }),
+      confirmLabel: t("projects.restoreProject"),
     });
     if (!confirmed) return;
     setError("");
@@ -336,12 +368,16 @@ export default function ProjectManagement() {
         body: JSON.stringify({ archived: false }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "恢复失败。");
-      setNotice("项目已恢复");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("projects.restoreSuccess"));
       setScope("active");
       await loadProjects();
     } catch (restoreError) {
-      setError(restoreError instanceof Error ? restoreError.message : "恢复失败。");
+      setError(
+        restoreError instanceof Error
+          ? restoreError.message
+          : t("common.error"),
+      );
     }
   }
 
@@ -353,22 +389,28 @@ export default function ProjectManagement() {
    */
   async function permanentlyDeleteProject(project: ProjectRecord) {
     const confirmation = await prompt({
-      title: "永久删除项目",
-      message: `永久删除会清除项目“${project.name}”的任务、迭代、成员关系和全部工时，且无法恢复。`,
-      inputLabel: `请输入项目代号 ${project.code} 以继续`,
+      title: t("projects.deleteConfirmTitle"),
+      message: t("projects.deleteConfirmMsg", {
+        name: project.name,
+        code: project.code,
+      }),
+      inputLabel: t("projects.codeLabel"),
       placeholder: project.code,
-      confirmLabel: "继续删除",
+      confirmLabel: t("projects.deletePermanently"),
       tone: "danger",
     });
     if (confirmation === null) return;
     if (confirmation.trim() !== project.code) {
-      setError("项目代号输入不匹配，永久删除已取消。");
+      setError(t("common.error"));
       return;
     }
     const confirmed = await confirm({
-      title: "最后确认",
-      message: `确定永久删除项目“${project.name}”及其全部业务数据吗？删除后无法恢复。`,
-      confirmLabel: "永久删除",
+      title: t("dialog.caution"),
+      message: t("projects.deleteConfirmMsg", {
+        name: project.name,
+        code: project.code,
+      }),
+      confirmLabel: t("projects.deletePermanently"),
       tone: "danger",
     });
     if (!confirmed) return;
@@ -383,11 +425,15 @@ export default function ProjectManagement() {
         }),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "永久删除失败。");
-      setNotice("项目已永久删除");
+      if (!response.ok) throw new Error(result.error ?? t("common.error"));
+      setNotice(t("projects.deleteSuccess"));
       await loadProjects();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "永久删除失败。");
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : t("common.error"),
+      );
     }
   }
 
@@ -395,22 +441,58 @@ export default function ProjectManagement() {
     <div className="module-page projects-page">
       <section className="module-heading">
         <div>
-          <span className="eyebrow">项目组合管理</span>
-          <h2>让目标、进度与投入保持一致</h2>
-          <p>统一维护项目状态、负责人、交付周期和任务工时。</p>
+          <span className="eyebrow">{t("projects.eyebrow")}</span>
+          <h2>{t("projects.heading")}</h2>
+          <p>{t("projects.description")}</p>
         </div>
         {canCreate && (
-          <button className="primary-action module-primary" type="button" onClick={openCreate}>
-            <Plus size={16} /> 新建项目
+          <button
+            className="primary-action module-primary"
+            type="button"
+            onClick={openCreate}
+          >
+            <Plus size={16} /> {t("projects.newProject")}
           </button>
         )}
       </section>
 
       <section className="project-stat-grid">
-        <article><span><FolderKanban size={18} /></span><div><small>有效项目</small><b>{stats.total}</b></div></article>
-        <article><span className="green"><LayoutGrid size={18} /></span><div><small>进行中</small><b>{stats.active}</b></div></article>
-        <article><span className="violet"><CheckCircle2 size={18} /></span><div><small>已完成</small><b>{stats.completed}</b></div></article>
-        <article><span className="orange"><Archive size={18} /></span><div><small>已归档</small><b>{stats.archived}</b></div></article>
+        <article>
+          <span>
+            <FolderKanban size={18} />
+          </span>
+          <div>
+            <small>{t("workbench.activeProjects")}</small>
+            <b>{stats.total}</b>
+          </div>
+        </article>
+        <article>
+          <span className="green">
+            <LayoutGrid size={18} />
+          </span>
+          <div>
+            <small>{t("projectStatuses.active")}</small>
+            <b>{stats.active}</b>
+          </div>
+        </article>
+        <article>
+          <span className="violet">
+            <CheckCircle2 size={18} />
+          </span>
+          <div>
+            <small>{t("projectStatuses.completed")}</small>
+            <b>{stats.completed}</b>
+          </div>
+        </article>
+        <article>
+          <span className="orange">
+            <Archive size={18} />
+          </span>
+          <div>
+            <small>{t("projects.archivedBadge")}</small>
+            <b>{stats.archived}</b>
+          </div>
+        </article>
       </section>
 
       <section className="module-toolbar">
@@ -422,7 +504,7 @@ export default function ProjectManagement() {
               setQuery(event.target.value);
               resetPage();
             }}
-            placeholder="搜索项目名称、代号或负责人"
+            placeholder={t("projects.searchPlaceholder")}
           />
         </label>
         <label className="module-select">
@@ -434,9 +516,11 @@ export default function ProjectManagement() {
               resetPage();
             }}
           >
-            <option value="">全部状态</option>
-            {Object.entries(projectStatusLabels).map(([value, label]) => (
-              <option value={value} key={value}>{label}</option>
+            <option value="">{t("projects.allStatuses")}</option>
+            {projectStatusList.map((st) => (
+              <option value={st} key={st}>
+                {getProjectStatusLabel(st)}
+              </option>
             ))}
           </select>
         </label>
@@ -449,17 +533,22 @@ export default function ProjectManagement() {
               resetPage();
             }}
           >
-            <option value="active">有效项目</option>
-            <option value="archived">已归档项目</option>
+            <option value="active">{t("workbench.activeProjects")}</option>
+            <option value="archived">{t("projects.archivedBadge")}</option>
           </select>
         </label>
         <div className="toolbar-view-options">
-          <span className="toolbar-result">显示 {filtered.length} 个项目</span>
+          <span className="toolbar-result">
+            {t("pagination.totalSummary", {
+              total: filtered.length,
+              label: t("projects.itemUnit"),
+            })}
+          </span>
           <ViewModeToggle
             value={viewMode}
             onChange={setViewMode}
-            cardLabel="切换为项目卡片布局"
-            listLabel="切换为项目列表布局"
+            cardLabel={t("projects.cardLabel")}
+            listLabel={t("projects.listLabel")}
           />
         </div>
       </section>
@@ -467,93 +556,161 @@ export default function ProjectManagement() {
       {error && <div className="module-alert">{error}</div>}
 
       {loading ? (
-        <div className="module-loading">正在加载项目…</div>
+        <div className="module-loading">{t("common.loading")}</div>
       ) : filtered.length ? (
         viewMode === "card" ? (
-          <section className="project-card-grid" aria-label="项目卡片">
-          {paginatedProjects.map((project) => {
-            const overrun =
-              project.estimateHours > 0 &&
-              project.actualHours > project.estimateHours;
-            return (
-              <article className={`project-card ${project.archived ? "archived" : ""}`} key={project.id}>
-                <header>
-                  <span className="project-mark" style={{ background: project.color }}>
-                    {project.code.slice(0, 2)}
-                  </span>
-                  <div>
-                    <small>{project.code}</small>
-                    <h3>{project.name}</h3>
-                  </div>
-                  <span className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}>
-                    {project.archived ? "已归档" : projectStatusLabels[project.status]}
-                  </span>
-                </header>
-                <RichTextContent value={project.description} emptyText="暂无项目描述。" />
-                {project.attachmentCount > 0 && <AttachmentViewer owner={{ type: "projectId", id: project.id }} />}
-                <div className="project-owner">
-                  <span className="avatar">{project.ownerName.slice(0, 1)}</span>
-                  <div><small>项目负责人</small><b>{project.ownerName}</b></div>
-                  <span><CalendarDays size={13} /> {displayDate(project.dueDate)}</span>
-                </div>
-                <div className="project-progress">
+          <section className="project-card-grid" aria-label={t("projects.cardLabel")}>
+            {paginatedProjects.map((project) => {
+              const overrun =
+                project.estimateHours > 0 &&
+                project.actualHours > project.estimateHours;
+              return (
+                <article
+                  className={`project-card ${project.archived ? "archived" : ""}`}
+                  key={project.id}
+                >
                   <header>
-                    <span>任务进度 · {project.completedTaskCount}/{project.taskCount}</span>
-                    <b>{project.progress}%</b>
+                    <span
+                      className="project-mark"
+                      style={{ background: project.color }}
+                    >
+                      {project.code.slice(0, 2)}
+                    </span>
+                    <div>
+                      <small>{project.code}</small>
+                      <h3>{project.name}</h3>
+                    </div>
+                    <span
+                      className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}
+                    >
+                      {project.archived
+                        ? t("projects.archivedBadge")
+                        : getProjectStatusLabel(project.status)}
+                    </span>
                   </header>
-                  <div className="progress-track">
-                    <i style={{ width: `${project.progress}%`, background: project.color }} />
+                  <RichTextContent
+                    value={project.description}
+                    emptyText={t("common.empty")}
+                  />
+                  {project.attachmentCount > 0 && (
+                    <AttachmentViewer
+                      owner={{ type: "projectId", id: project.id }}
+                    />
+                  )}
+                  <div className="project-owner">
+                    <span className="avatar">
+                      {project.ownerName.slice(0, 1)}
+                    </span>
+                    <div>
+                      <small>{t("projects.owner")}</small>
+                      <b>{project.ownerName}</b>
+                    </div>
+                    <span>
+                      <CalendarDays size={13} />{" "}
+                      {displayDate(project.dueDate, locale, t("common.none"))}
+                    </span>
                   </div>
-                </div>
-                <div className="project-hours">
-                  <span><Clock3 size={14} /> 预估 <b>{project.estimateHours.toFixed(1)}h</b></span>
-                  <span className={overrun ? "risk" : ""}>
-                    实际 <b>{project.actualHours.toFixed(1)}h</b>
-                  </span>
-                </div>
-                <footer>
-                  <span><Users2 size={14} /> {project.memberCount} 位成员（测试 {project.testerCount}）· {project.taskCount} 项任务</span>
-                  {!project.archived && project.canManage && (
-                    <div>
-                      <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
-                        <Edit3 size={15} /> 编辑
-                      </button>
-                      <button type="button" onClick={() => archiveProject(project)} aria-label={`归档 ${project.name}`}>
-                        <Archive size={15} />
-                      </button>
+                  <div className="project-progress">
+                    <header>
+                      <span>
+                        {t("workbench.taskCountSummary", {
+                          done: project.completedTaskCount,
+                          total: project.taskCount,
+                        })}
+                      </span>
+                      <b>{project.progress}%</b>
+                    </header>
+                    <div className="progress-track">
+                      <i
+                        style={{
+                          width: `${project.progress}%`,
+                          background: project.color,
+                        }}
+                      />
                     </div>
-                  )}
-                  {project.archived && (project.canRestore || project.canDeletePermanently) && (
-                    <div>
-                      {project.canRestore && (
-                        <button type="button" onClick={() => void restoreProject(project)} aria-label={`恢复 ${project.name}`}>
-                          <RotateCcw size={15} /> 恢复
+                  </div>
+                  <div className="project-hours">
+                    <span className={overrun ? "risk" : ""}>
+                      <Clock3 size={14} />{" "}
+                      {t("projects.hoursRatio", {
+                        actual: project.actualHours.toFixed(1),
+                        estimate: project.estimateHours.toFixed(1),
+                      })}
+                    </span>
+                  </div>
+                  <footer>
+                    <span>
+                      <Users2 size={14} />{" "}
+                      {t("projects.membersCount", {
+                        count: project.memberCount,
+                      })}{" "}
+                      ·{" "}
+                      {t("projects.tasksCount", {
+                        count: project.taskCount,
+                      })}
+                    </span>
+                    {!project.archived && project.canManage && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(project)}
+                          aria-label={`${t("common.edit")} ${project.name}`}
+                        >
+                          <Edit3 size={15} /> {t("common.edit")}
                         </button>
-                      )}
-                      {project.canDeletePermanently && (
-                        <button className="danger" type="button" onClick={() => void permanentlyDeleteProject(project)} aria-label={`永久删除 ${project.name}`}>
-                          <Trash2 size={15} /> 永久删除
+                        <button
+                          type="button"
+                          onClick={() => archiveProject(project)}
+                          aria-label={`${t("projects.archiveProject")} ${project.name}`}
+                        >
+                          <Archive size={15} />
                         </button>
+                      </div>
+                    )}
+                    {project.archived &&
+                      (project.canRestore || project.canDeletePermanently) && (
+                        <div>
+                          {project.canRestore && (
+                            <button
+                              type="button"
+                              onClick={() => void restoreProject(project)}
+                              aria-label={`${t("projects.restoreProject")} ${project.name}`}
+                            >
+                              <RotateCcw size={15} /> {t("projects.restoreProject")}
+                            </button>
+                          )}
+                          {project.canDeletePermanently && (
+                            <button
+                              className="danger"
+                              type="button"
+                              onClick={() =>
+                                void permanentlyDeleteProject(project)
+                              }
+                              aria-label={`${t("projects.deletePermanently")} ${project.name}`}
+                            >
+                              <Trash2 size={15} />{" "}
+                              {t("projects.deletePermanently")}
+                            </button>
+                          )}
+                        </div>
                       )}
-                    </div>
-                  )}
-                </footer>
-              </article>
-            );
-          })}
+                  </footer>
+                </article>
+              );
+            })}
           </section>
         ) : (
-          <section className="entity-table-shell" aria-label="项目列表">
+          <section className="entity-table-shell" aria-label={t("projects.listLabel")}>
             <table className="entity-table project-entity-table">
               <thead>
                 <tr>
-                  <th>项目</th>
-                  <th>状态</th>
-                  <th>负责人 / 截止日期</th>
-                  <th>任务进度</th>
-                  <th>工时</th>
-                  <th>成员</th>
-                  <th>操作</th>
+                  <th>{t("projects.nameLabel")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("projects.owner")} / {t("common.dueDate")}</th>
+                  <th>{t("common.progress")}</th>
+                  <th>{t("common.hours")}</th>
+                  <th>{t("common.member")}</th>
+                  <th>{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -566,50 +723,86 @@ export default function ProjectManagement() {
                     (project.archived &&
                       (project.canRestore || project.canDeletePermanently));
                   return (
-                    <tr className={project.archived ? "archived" : ""} key={project.id}>
+                    <tr
+                      className={project.archived ? "archived" : ""}
+                      key={project.id}
+                    >
                       <td>
                         <div className="entity-title-cell">
-                          <span className="project-mark" style={{ background: project.color }}>
+                          <span
+                            className="project-mark"
+                            style={{ background: project.color }}
+                          >
                             {project.code.slice(0, 2)}
                           </span>
                           <div>
                             <small>{project.code}</small>
                             <strong>{project.name}</strong>
                             {project.attachmentCount > 0 && (
-                              <AttachmentViewer owner={{ type: "projectId", id: project.id }} />
+                              <AttachmentViewer
+                                owner={{ type: "projectId", id: project.id }}
+                              />
                             )}
                           </div>
                         </div>
                       </td>
                       <td>
-                        <span className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}>
-                          {project.archived ? "已归档" : projectStatusLabels[project.status]}
+                        <span
+                          className={`project-status ${project.archived ? "project-archived" : `project-${project.status}`}`}
+                        >
+                          {project.archived
+                            ? t("projects.archivedBadge")
+                            : getProjectStatusLabel(project.status)}
                         </span>
                       </td>
                       <td>
                         <div className="entity-stacked-value">
                           <strong>{project.ownerName}</strong>
-                          <small><CalendarDays size={12} /> {displayDate(project.dueDate)}</small>
+                          <small>
+                            <CalendarDays size={12} />{" "}
+                            {displayDate(project.dueDate, locale, t("common.none"))}
+                          </small>
                         </div>
                       </td>
                       <td>
                         <div className="entity-progress-cell">
-                          <span><small>{project.completedTaskCount}/{project.taskCount}</small><b>{project.progress}%</b></span>
+                          <span>
+                            <small>
+                              {t("workbench.taskCountSummary", {
+                                done: project.completedTaskCount,
+                                total: project.taskCount,
+                              })}
+                            </small>
+                            <b>{project.progress}%</b>
+                          </span>
                           <div className="progress-track">
-                            <i style={{ width: `${project.progress}%`, background: project.color }} />
+                            <i
+                              style={{
+                                width: `${project.progress}%`,
+                                background: project.color,
+                              }}
+                            />
                           </div>
                         </div>
                       </td>
                       <td>
                         <div className="entity-stacked-value">
-                          <span>预估 <b>{project.estimateHours.toFixed(1)}h</b></span>
-                          <span className={overrun ? "risk" : ""}>实际 <b>{project.actualHours.toFixed(1)}h</b></span>
+                          <span className={overrun ? "risk" : ""}>
+                            {t("projects.hoursRatio", {
+                              actual: project.actualHours.toFixed(1),
+                              estimate: project.estimateHours.toFixed(1),
+                            })}
+                          </span>
                         </div>
                       </td>
                       <td>
                         <div className="entity-stacked-value">
-                          <span><Users2 size={12} /> {project.memberCount} 位成员</span>
-                          <small>测试 {project.testerCount} · 任务 {project.taskCount}</small>
+                          <span>
+                            <Users2 size={12} />{" "}
+                            {t("projects.membersCount", {
+                              count: project.memberCount,
+                            })}
+                          </span>
                         </div>
                       </td>
                       <td className="entity-actions-cell">
@@ -617,22 +810,41 @@ export default function ProjectManagement() {
                           <div className="entity-actions">
                             {!project.archived && project.canManage && (
                               <>
-                                <button type="button" onClick={() => openEdit(project)} aria-label={`编辑 ${project.name}`}>
-                                  <Edit3 size={14} /> 编辑
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(project)}
+                                  aria-label={`${t("common.edit")} ${project.name}`}
+                                >
+                                  <Edit3 size={14} /> {t("common.edit")}
                                 </button>
-                                <button type="button" onClick={() => void archiveProject(project)} aria-label={`归档 ${project.name}`}>
-                                  <Archive size={14} /> 归档
+                                <button
+                                  type="button"
+                                  onClick={() => void archiveProject(project)}
+                                  aria-label={`${t("projects.archiveProject")} ${project.name}`}
+                                >
+                                  <Archive size={14} /> {t("projects.archiveProject")}
                                 </button>
                               </>
                             )}
                             {project.archived && project.canRestore && (
-                              <button type="button" onClick={() => void restoreProject(project)} aria-label={`恢复 ${project.name}`}>
-                                <RotateCcw size={14} /> 恢复
+                              <button
+                                type="button"
+                                onClick={() => void restoreProject(project)}
+                                aria-label={`${t("projects.restoreProject")} ${project.name}`}
+                              >
+                                <RotateCcw size={14} /> {t("projects.restoreProject")}
                               </button>
                             )}
                             {project.archived && project.canDeletePermanently && (
-                              <button className="danger" type="button" onClick={() => void permanentlyDeleteProject(project)} aria-label={`永久删除 ${project.name}`}>
-                                <Trash2 size={14} /> 删除
+                              <button
+                                className="danger"
+                                type="button"
+                                onClick={() =>
+                                  void permanentlyDeleteProject(project)
+                                }
+                                aria-label={`${t("projects.deletePermanently")} ${project.name}`}
+                              >
+                                <Trash2 size={14} /> {t("common.delete")}
                               </button>
                             )}
                           </div>
@@ -650,8 +862,8 @@ export default function ProjectManagement() {
       ) : (
         <div className="module-empty large">
           <FolderKanban size={30} />
-          <b>没有符合条件的项目</b>
-          <span>调整筛选条件，或创建一个新项目。</span>
+          <b>{t("projects.noMatches")}</b>
+          <span>{t("projects.createFirstProject")}</span>
         </div>
       )}
 
@@ -660,7 +872,7 @@ export default function ProjectManagement() {
           page={page}
           pageSize={pageSize}
           total={filtered.length}
-          itemLabel="个项目"
+          itemLabel={t("projects.itemUnit")}
           onPageChange={setPage}
           onPageSizeChange={changePageSize}
         />
@@ -668,48 +880,105 @@ export default function ProjectManagement() {
 
       {modalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <section className="workspace-modal" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+          <section
+            className="workspace-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-modal-title"
+          >
             <header>
               <div>
-                <span className="eyebrow">{editingId ? "编辑项目" : "新项目"}</span>
-                <h2 id="project-modal-title">{editingId ? "更新项目资料" : "创建一个交付项目"}</h2>
+                <span className="eyebrow">
+                  {editingId
+                    ? t("projects.modalEditTitle")
+                    : t("projects.modalCreateTitle")}
+                </span>
+                <h2 id="project-modal-title">
+                  {editingId
+                    ? t("projects.modalEditTitle")
+                    : t("projects.modalCreateTitle")}
+                </h2>
               </div>
-              <button type="button" onClick={() => setModalOpen(false)} aria-label="关闭">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                aria-label={t("common.close")}
+              >
                 <X size={18} />
               </button>
             </header>
             <form onSubmit={saveProject}>
               <div className="workspace-form-grid">
                 <label>
-                  <span>项目名称</span>
-                  <input required maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：FlowBoard 2.0" />
+                  <span>{t("projects.nameLabel")}</span>
+                  <input
+                    required
+                    maxLength={80}
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm({ ...form, name: e.target.value })
+                    }
+                    placeholder={t("projects.namePlaceholder")}
+                  />
                 </label>
                 <label>
-                  <span>项目代号</span>
-                  <input required maxLength={20} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="FLOW2" />
+                  <span>{t("projects.codeLabel")}</span>
+                  <input
+                    required
+                    maxLength={20}
+                    value={form.code}
+                    onChange={(e) =>
+                      setForm({ ...form, code: e.target.value.toUpperCase() })
+                    }
+                    placeholder={t("projects.codePlaceholder")}
+                  />
                 </label>
                 <label>
-                  <span>项目状态</span>
-                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as ProjectStatus })}>
-                    {Object.entries(projectStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  <span>{t("projects.statusLabel")}</span>
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        status: e.target.value as ProjectStatus,
+                      })
+                    }
+                  >
+                    {projectStatusList.map((st) => (
+                      <option key={st} value={st}>
+                        {getProjectStatusLabel(st)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label>
-                  <span>负责人</span>
-                  <select required value={form.ownerId} onChange={(e) => {
-                    const ownerId = e.target.value;
-                    setForm({
-                      ...form,
-                      ownerId,
-                      memberIds: [...new Set([ownerId, ...form.memberIds].filter(Boolean))],
-                    });
-                  }}>
-                    <option value="">请选择</option>
-                    {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
+                  <span>{t("projects.ownerLabel")}</span>
+                  <select
+                    required
+                    value={form.ownerId}
+                    onChange={(e) => {
+                      const ownerId = e.target.value;
+                      setForm({
+                        ...form,
+                        ownerId,
+                        memberIds: [
+                          ...new Set(
+                            [ownerId, ...form.memberIds].filter(Boolean),
+                          ),
+                        ],
+                      });
+                    }}
+                  >
+                    <option value="">{t("projects.selectOwner")}</option>
+                    {owners.map((owner) => (
+                      <option key={owner.id} value={owner.id}>
+                        {owner.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <fieldset className="form-wide project-member-fieldset">
-                  <legend>项目成员（可多选）</legend>
+                  <legend>{t("projects.membersLabel")}</legend>
                   <div className="project-member-picker">
                     {people.map((person) => {
                       const checked = form.memberIds.includes(person.id);
@@ -727,43 +996,63 @@ export default function ProjectManagement() {
                                 ...form,
                                 memberIds: event.target.checked
                                   ? [...new Set([...form.memberIds, person.id])]
-                                  : form.memberIds.filter((id) => id !== person.id),
+                                  : form.memberIds.filter(
+                                      (id) => id !== person.id,
+                                    ),
                               })
                             }
                           />
-                          <span>
-                            {person.name}
-                            {person.status === "disabled"
-                              ? "（已停用，请移除）"
-                              : person.status === "invited"
-                                ? "（待激活，请移除）"
-                                : ""}
-                          </span>
-                          <small>{isOwner ? "负责人" : person.role === "viewer" ? "只读" : person.role === "tester" ? "测试" : "研发"}</small>
+                          <span>{person.name}</span>
+                          <small>
+                            {isOwner
+                              ? t("projects.owner")
+                              : person.role === "viewer"
+                                ? t("roles.viewer")
+                                : person.role === "tester"
+                                  ? t("roles.tester")
+                                  : t("roles.member")}
+                          </small>
                         </label>
                       );
                     })}
                   </div>
-                  <p>负责人会自动加入；研发成员可指派为开发负责人，测试人员可独立指派为测试负责人并参与迭代验收和工时登记。</p>
                 </fieldset>
                 <label>
-                  <span>开始日期</span>
-                  <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+                  <span>{t("common.startDate")}</span>
+                  <input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) =>
+                      setForm({ ...form, startDate: e.target.value })
+                    }
+                  />
                 </label>
                 <label>
-                  <span>截止日期</span>
-                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                  <span>{t("common.dueDate")}</span>
+                  <input
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) =>
+                      setForm({ ...form, dueDate: e.target.value })
+                    }
+                  />
                 </label>
                 <AttachmentEditor
                   draftToken={attachmentDraftToken}
-                  owner={editingId ? { type: "projectId", id: editingId } : undefined}
+                  owner={
+                    editingId
+                      ? { type: "projectId", id: editingId }
+                      : undefined
+                  }
                   value={form.description}
-                  onChange={(description) => setForm({ ...form, description })}
-                  label="项目说明与附件"
-                  placeholder="说明项目目标、交付范围和成功标准；上传图片后会插入预览。"
+                  onChange={(description) =>
+                    setForm({ ...form, description })
+                  }
+                  label={t("projects.descriptionLabel")}
+                  placeholder={t("projects.descriptionPlaceholder")}
                 />
                 <fieldset className="form-wide color-fieldset">
-                  <legend>识别颜色</legend>
+                  <legend>{t("projects.colorLabel")}</legend>
                   {colors.map((color) => (
                     <button
                       className={form.color === color ? "selected" : ""}
@@ -771,15 +1060,25 @@ export default function ProjectManagement() {
                       type="button"
                       key={color}
                       onClick={() => setForm({ ...form, color })}
-                      aria-label={`选择颜色 ${color}`}
+                      aria-label={`${t("projects.colorLabel")} ${color}`}
                     />
                   ))}
                 </fieldset>
               </div>
               <footer>
-                <button type="button" onClick={() => setModalOpen(false)}>取消</button>
-                <button className="primary-action" type="submit" disabled={saving}>
-                  {saving ? "保存中…" : editingId ? "保存修改" : "创建项目"}
+                <button type="button" onClick={() => setModalOpen(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving
+                    ? t("common.saving")
+                    : editingId
+                      ? t("common.save")
+                      : t("common.create")}
                 </button>
               </footer>
             </form>
@@ -787,7 +1086,11 @@ export default function ProjectManagement() {
         </div>
       )}
 
-      {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
+      {notice && (
+        <div className="toast">
+          <CheckCircle2 size={16} /> {notice}
+        </div>
+      )}
     </div>
   );
 }

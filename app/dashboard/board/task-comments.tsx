@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Clock, MessageCircle, MessageSquare, Send } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 type Comment = {
   id: string;
@@ -28,9 +29,10 @@ function getInitial(name: string): string {
  * 格式化相对时间或简短日期。
  *
  * @param isoString ISO 时间字符串。
+ * @param locale 当前语言代码。
  * @return 友好时间显示文本。
  */
-function formatTime(isoString: string): string {
+function formatTime(isoString: string, locale: string): string {
   const date = new Date(isoString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -38,12 +40,20 @@ function formatTime(isoString: string): string {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMinutes < 1) return "刚刚";
-  if (diffMinutes < 60) return `${diffMinutes} 分钟前`;
-  if (diffHours < 24) return `${diffHours} 小时前`;
-  if (diffDays < 7) return `${diffDays} 天前`;
+  if (diffMinutes < 1) return locale === "zh" ? "刚刚" : "Just now";
+  if (diffMinutes < 60) {
+    return locale === "zh"
+      ? `${diffMinutes} 分钟前`
+      : `${diffMinutes}m ago`;
+  }
+  if (diffHours < 24) {
+    return locale === "zh" ? `${diffHours} 小时前` : `${diffHours}h ago`;
+  }
+  if (diffDays < 7) {
+    return locale === "zh" ? `${diffDays} 天前` : `${diffDays}d ago`;
+  }
 
-  return date.toLocaleDateString("zh-CN", {
+  return date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -52,12 +62,14 @@ function formatTime(isoString: string): string {
 }
 
 /**
- * 任务沟通与动态时间轴组件。
- * 提供现代化的时间轴对话视图，提升卡片内部沟通体验。
+ * 任务沟通与动态时间轴组件，支持中英文国际化。
  *
- * @param taskId 当前关联的任务 ID。
+ * @param props 组件属性。
+ * @param props.taskId 当前关联的任务 ID。
+ * @return 任务评论与动态组件。
  */
 export default function TaskComments({ taskId }: { taskId: string }) {
+  const { t, locale } = useTranslation();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
@@ -65,19 +77,24 @@ export default function TaskComments({ taskId }: { taskId: string }) {
 
   useEffect(() => {
     let active = true;
+    /**
+     * 加载当前任务评论列表。
+     */
     async function fetchComments() {
       setLoading(true);
       try {
         const res = await fetch(`/api/tasks/${taskId}/comments`);
         if (!res.ok) {
           const err = await res.json();
-          throw new Error(err.error || "获取评论失败");
+          throw new Error(err.error || t("common.error"));
         }
         const json = await res.json();
         if (active) setComments(json.data);
       } catch (error) {
         if (active) {
-          window.alert(error instanceof Error ? error.message : "获取评论失败");
+          window.alert(
+            error instanceof Error ? error.message : t("common.error"),
+          );
         }
       } finally {
         if (active) setLoading(false);
@@ -87,8 +104,13 @@ export default function TaskComments({ taskId }: { taskId: string }) {
     return () => {
       active = false;
     };
-  }, [taskId]);
+  }, [taskId, t]);
 
+  /**
+   * 提交并发布新评论。
+   *
+   * @param e 表单提交事件。
+   */
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!content.trim()) return;
@@ -101,13 +123,15 @@ export default function TaskComments({ taskId }: { taskId: string }) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "发布评论失败");
+        throw new Error(err.error || t("common.error"));
       }
       const json = await res.json();
       setComments((prev) => [...prev, json.data]);
       setContent("");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "发布评论失败");
+      window.alert(
+        error instanceof Error ? error.message : t("common.error"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -117,16 +141,21 @@ export default function TaskComments({ taskId }: { taskId: string }) {
     <div className="task-comments-section">
       <div className="comments-header-bar">
         <h3 className="comments-title">
-          <MessageSquare size={16} /> 沟通与动态
+          <MessageSquare size={16} /> {t("board.commentsTab")}
         </h3>
-        <span className="comments-badge">{comments.length} 条讨论</span>
+        <span className="comments-badge">
+          {comments.length} {t("common.items")}
+        </span>
       </div>
 
-      {/* 评论编辑输入框 */}
       <form className="comment-composer" onSubmit={handleSubmit}>
         <div className="composer-input-wrapper">
           <textarea
-            placeholder="发表讨论、补充细节或更新任务进展..."
+            placeholder={
+              locale === "zh"
+                ? "发表讨论、补充细节或更新任务进展..."
+                : "Post a comment, add details, or update progress..."
+            }
             value={content}
             onChange={(e) => setContent(e.target.value)}
             disabled={submitting}
@@ -134,32 +163,39 @@ export default function TaskComments({ taskId }: { taskId: string }) {
             rows={3}
           />
           <div className="composer-footer">
-            <span className="composer-char-count">
-              {content.length} / 1000
-            </span>
+            <span className="composer-char-count">{content.length} / 1000</span>
             <button
               type="submit"
               disabled={!content.trim() || submitting}
               className="composer-submit-btn"
             >
               <Send size={13} />
-              <span>{submitting ? "发送中..." : "发表评论"}</span>
+              <span>
+                {submitting
+                  ? t("common.saving")
+                  : locale === "zh"
+                    ? "发表评论"
+                    : "Post Comment"}
+              </span>
             </button>
           </div>
         </div>
       </form>
 
-      {/* 时间轴讨论列表 */}
       <div className="comments-timeline">
         {loading ? (
           <div className="comments-loading-state">
             <Clock size={16} />
-            <span>加载讨论记录中...</span>
+            <span>{t("common.loading")}</span>
           </div>
         ) : comments.length === 0 ? (
           <div className="comments-empty-state">
             <MessageCircle size={22} />
-            <p>暂无沟通记录，发表第一条评论吧！</p>
+            <p>
+              {locale === "zh"
+                ? "暂无沟通记录，发表第一条评论吧！"
+                : "No comments yet. Be the first to share an update!"}
+            </p>
           </div>
         ) : (
           comments.map((comment) => (
@@ -170,8 +206,11 @@ export default function TaskComments({ taskId }: { taskId: string }) {
               <div className="timeline-card">
                 <div className="timeline-header">
                   <span className="author-name">{comment.author.name}</span>
-                  <span className="comment-timestamp" title={comment.createdAt}>
-                    {formatTime(comment.createdAt)}
+                  <span
+                    className="comment-timestamp"
+                    title={comment.createdAt}
+                  >
+                    {formatTime(comment.createdAt, locale)}
                   </span>
                 </div>
                 <div className="timeline-body">{comment.content}</div>

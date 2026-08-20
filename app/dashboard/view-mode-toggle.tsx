@@ -2,6 +2,7 @@
 
 import { LayoutGrid, List } from "lucide-react";
 import { useCallback, useSyncExternalStore } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 export type ViewMode = "card" | "list";
 
@@ -11,8 +12,8 @@ const viewModeMemory = new Map<string, ViewMode>();
 type ViewModeToggleProps = {
   value: ViewMode;
   onChange: (value: ViewMode) => void;
-  cardLabel: string;
-  listLabel: string;
+  cardLabel?: string;
+  listLabel?: string;
 };
 
 /**
@@ -118,12 +119,13 @@ export function usePersistentViewMode(storageKey: string) {
 }
 
 /**
- * 渲染卡片与列表布局的无障碍切换按钮。
+ * 渲染卡片与列表布局的无障碍切换按钮，支持中英文国际化。
  *
- * @param value 当前布局模式。
- * @param onChange 布局模式变更回调。
- * @param cardLabel 卡片模式的可访问名称。
- * @param listLabel 列表模式的可访问名称。
+ * @param props 组件属性。
+ * @param props.value 当前布局模式。
+ * @param props.onChange 布局模式变更回调。
+ * @param props.cardLabel 卡片模式的可访问名称。
+ * @param props.listLabel 列表模式的可访问名称。
  * @return 布局切换组件。
  */
 export default function ViewModeToggle({
@@ -132,29 +134,33 @@ export default function ViewModeToggle({
   cardLabel,
   listLabel,
 }: ViewModeToggleProps) {
+  const { t } = useTranslation();
+  const effectiveCardLabel = cardLabel ?? t("viewMode.card");
+  const effectiveListLabel = listLabel ?? t("viewMode.list");
+
   return (
-    <div className="view-mode-toggle" role="group" aria-label="布局切换">
+    <div className="view-mode-toggle" role="group" aria-label={t("viewMode.ariaGroup")}>
       <button
         className={value === "card" ? "active" : ""}
         type="button"
         aria-pressed={value === "card"}
-        aria-label={cardLabel}
-        title={cardLabel}
+        aria-label={effectiveCardLabel}
+        title={effectiveCardLabel}
         onClick={() => onChange("card")}
       >
         <LayoutGrid size={14} />
-        <span>卡片</span>
+        <span>{t("viewMode.card")}</span>
       </button>
       <button
         className={value === "list" ? "active" : ""}
         type="button"
         aria-pressed={value === "list"}
-        aria-label={listLabel}
-        title={listLabel}
+        aria-label={effectiveListLabel}
+        title={effectiveListLabel}
         onClick={() => onChange("list")}
       >
         <List size={14} />
-        <span>列表</span>
+        <span>{t("viewMode.list")}</span>
       </button>
     </div>
   );
