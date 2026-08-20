@@ -2,6 +2,7 @@
 
 import { FileImage, Paperclip, Trash2, Upload } from "lucide-react";
 import { useEffect, useState, type ChangeEvent } from "react";
+import { useTranslation } from "@/lib/i18n";
 import RichTextContent from "./rich-text-content";
 
 export type ClientAttachment = {
@@ -44,13 +45,14 @@ function fileSizeLabel(sizeBytes: number): string {
 /**
  * 渲染图文说明编辑、附件上传、预览和删除功能。
  *
- * @param draftToken 当前表单的附件草稿令牌。
- * @param owner 已保存业务实体的附件归属。
- * @param value 当前图文说明。
- * @param onChange 图文说明变更回调。
- * @param label 说明字段标题。
- * @param placeholder 输入框占位文本。
- * @param disabled 是否禁用编辑。
+ * @param props 组件属性。
+ * @param props.draftToken 当前表单的附件草稿令牌。
+ * @param props.owner 已保存业务实体的附件归属。
+ * @param props.value 当前图文说明。
+ * @param props.onChange 图文说明变更回调。
+ * @param props.label 说明字段标题。
+ * @param props.placeholder 输入框占位文本。
+ * @param props.disabled 是否禁用编辑。
  * @return 附件图文编辑器组件。
  */
 export default function AttachmentEditor({
@@ -58,16 +60,20 @@ export default function AttachmentEditor({
   owner,
   value,
   onChange,
-  label = "图文说明",
-  placeholder = "输入说明；上传图片后会自动插入预览。",
+  label,
+  placeholder,
   disabled = false,
 }: AttachmentEditorProps) {
+  const { t } = useTranslation();
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const ownerType = owner?.type;
   const ownerId = owner?.id;
+
+  const effectiveLabel = label ?? t("attachments.legend");
+  const effectivePlaceholder = placeholder ?? t("attachments.placeholder");
 
   useEffect(() => {
     const timer = window.setTimeout(async () => {
@@ -79,16 +85,16 @@ export default function AttachmentEditor({
           : `draftToken=${encodeURIComponent(draftToken)}`;
         const response = await fetch(`/api/attachments?${query}`, { cache: "no-store" });
         const result = (await response.json()) as { data?: ClientAttachment[]; error?: string };
-        if (!response.ok) throw new Error(result.error ?? "附件加载失败。");
+        if (!response.ok) throw new Error(result.error ?? t("attachments.loadError"));
         setAttachments(result.data ?? []);
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "附件加载失败。");
+        setError(loadError instanceof Error ? loadError.message : t("attachments.loadError"));
       } finally {
         setLoading(false);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [draftToken, ownerId, ownerType]);
+  }, [draftToken, ownerId, ownerType, t]);
 
   /**
    * 上传所选附件，并将安全图片标记插入说明。
@@ -110,7 +116,7 @@ export default function AttachmentEditor({
         formData.set("file", file);
         const response = await fetch("/api/attachments", { method: "POST", body: formData });
         const result = (await response.json()) as { data?: ClientAttachment; error?: string };
-        if (!response.ok || !result.data) throw new Error(result.error ?? "附件上传失败。");
+        if (!response.ok || !result.data) throw new Error(result.error ?? t("attachments.uploadError"));
         setAttachments((current) => [...current, result.data!]);
         if (result.data.embeddable) {
           const imageMarkup = `![${result.data.fileName}](${result.data.contentUrl})`;
@@ -119,7 +125,7 @@ export default function AttachmentEditor({
       }
       if (nextValue !== value) onChange(nextValue);
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "附件上传失败。");
+      setError(uploadError instanceof Error ? uploadError.message : t("attachments.uploadError"));
     } finally {
       setUploading(false);
     }
@@ -136,36 +142,36 @@ export default function AttachmentEditor({
     try {
       const response = await fetch(`/api/attachments/${attachment.id}`, { method: "DELETE" });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "附件删除失败。");
+      if (!response.ok) throw new Error(result.error ?? t("attachments.deleteError"));
       setAttachments((current) => current.filter((item) => item.id !== attachment.id));
       const markup = `![${attachment.fileName}](${attachment.contentUrl})`;
       onChange(value.replaceAll(markup, "").replace(/\n{3,}/g, "\n\n").trim());
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "附件删除失败。");
+      setError(deleteError instanceof Error ? deleteError.message : t("attachments.deleteError"));
     }
   }
 
   return (
     <fieldset className="form-wide attachment-editor">
-      <legend>{label}</legend>
+      <legend>{effectiveLabel}</legend>
       <textarea
         disabled={disabled}
         maxLength={10_000}
         rows={5}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
+        placeholder={effectivePlaceholder}
       />
       <div className="attachment-toolbar">
         <label className={disabled || uploading ? "disabled" : ""}>
-          <Upload size={14} /> {uploading ? "上传中…" : "上传附件或插入图片"}
+          <Upload size={14} /> {uploading ? t("attachments.uploading") : t("attachments.uploadButton")}
           <input disabled={disabled || uploading} type="file" multiple onChange={(event) => void uploadFiles(event)} />
         </label>
-        <span>单个文件不超过 4 MB；PNG、JPG、GIF、WebP 会插入说明预览。</span>
+        <span>{t("attachments.hint")}</span>
       </div>
       {error && <div className="attachment-error">{error}</div>}
       {loading ? (
-        <div className="attachment-state">正在加载附件…</div>
+        <div className="attachment-state">{t("attachments.loading")}</div>
       ) : attachments.length ? (
         <div className="attachment-list">
           {attachments.map((attachment) => (
@@ -173,14 +179,22 @@ export default function AttachmentEditor({
               <span>{attachment.embeddable ? <FileImage size={15} /> : <Paperclip size={15} />}</span>
               <a href={`${attachment.contentUrl}?download=1`} download>{attachment.fileName}</a>
               <small>{fileSizeLabel(attachment.sizeBytes)}</small>
-              {!disabled && <button type="button" onClick={() => void deleteAttachment(attachment)} aria-label={`删除附件 ${attachment.fileName}`}><Trash2 size={13} /></button>}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => void deleteAttachment(attachment)}
+                  aria-label={t("attachments.deleteAria", { name: attachment.fileName })}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>
       ) : null}
       <div className="rich-text-preview">
-        <small>说明预览</small>
-        <RichTextContent value={value} emptyText="暂无说明内容。" />
+        <small>{t("attachments.preview")}</small>
+        <RichTextContent value={value} emptyText={t("attachments.noContent")} />
       </div>
     </fieldset>
   );

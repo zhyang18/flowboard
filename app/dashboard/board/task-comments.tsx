@@ -151,11 +151,7 @@ export default function TaskComments({ taskId }: { taskId: string }) {
       <form className="comment-composer" onSubmit={handleSubmit}>
         <div className="composer-input-wrapper">
           <textarea
-            placeholder={
-              locale === "zh"
-                ? "发表讨论、补充细节或更新任务进展..."
-                : "Post a comment, add details, or update progress..."
-            }
+            placeholder={t("board.commentPlaceholder")}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             disabled={submitting}
@@ -171,11 +167,7 @@ export default function TaskComments({ taskId }: { taskId: string }) {
             >
               <Send size={13} />
               <span>
-                {submitting
-                  ? t("common.saving")
-                  : locale === "zh"
-                    ? "发表评论"
-                    : "Post Comment"}
+                {submitting ? t("common.saving") : t("board.postComment")}
               </span>
             </button>
           </div>
@@ -191,11 +183,7 @@ export default function TaskComments({ taskId }: { taskId: string }) {
         ) : comments.length === 0 ? (
           <div className="comments-empty-state">
             <MessageCircle size={22} />
-            <p>
-              {locale === "zh"
-                ? "暂无沟通记录，发表第一条评论吧！"
-                : "No comments yet. Be the first to share an update!"}
-            </p>
+            <p>{t("board.noComments")}</p>
           </div>
         ) : (
           comments.map((comment) => (

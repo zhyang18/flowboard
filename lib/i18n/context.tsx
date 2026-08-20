@@ -38,6 +38,8 @@ export type LanguageContextValue = {
   getTaskPriorityLabel: (priority: string) => string;
   /** 获取迭代状态的本地化标签 */
   getSprintStatusLabel: (status: string) => string;
+  /** 获取功能权限项的本地化标签 */
+  getPermissionLabel: (permission: string) => string;
 };
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -259,6 +261,29 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
+  /**
+   * 获取功能权限项的本地化显示名称。
+   *
+   * @param permission 权限中文名称或键名。
+   * @return 对应的本地化标签。
+   */
+  const getPermissionLabel = useCallback(
+    (permission: string): string => {
+      const permissionMap: Record<string, string> = {
+        "项目设置": "projectSettings",
+        "用户与团队": "userTeam",
+        "任务管理": "taskManagement",
+        "工时审批": "workLogApproval",
+        "报表导出": "reportExport",
+        "系统审计": "systemAudit",
+      };
+      const key = permissionMap[permission] ?? permission;
+      const dict = (translations[locale].users?.roles?.permissions ?? {}) as Record<string, string>;
+      return dict[key] ?? permission;
+    },
+    [locale],
+  );
+
   const value = useMemo(
     () => ({
       locale,
@@ -271,6 +296,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       getTaskStatusLabel,
       getTaskPriorityLabel,
       getSprintStatusLabel,
+      getPermissionLabel,
     }),
     [
       locale,
@@ -283,6 +309,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       getTaskStatusLabel,
       getTaskPriorityLabel,
       getSprintStatusLabel,
+      getPermissionLabel,
     ],
   );
 
@@ -323,6 +350,7 @@ export function useTranslation() {
     getTaskStatusLabel,
     getTaskPriorityLabel,
     getSprintStatusLabel,
+    getPermissionLabel,
   } = useLanguage();
   return {
     t,
@@ -335,5 +363,6 @@ export function useTranslation() {
     getTaskStatusLabel,
     getTaskPriorityLabel,
     getSprintStatusLabel,
+    getPermissionLabel,
   };
 }

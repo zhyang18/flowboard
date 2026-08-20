@@ -50,3 +50,56 @@ test("翻译词典中不应有空值或未定义的键", () => {
     }
   }
 });
+
+/**
+ * 递归扫描目录中的所有 TypeScript/TSX 源码文件。
+ *
+ * @param dirPath 要扫描的目录绝对或相对路径。
+ * @return 匹配的文件绝对或相对路径列表。
+ */
+function scanSourceFiles(dirPath: string): string[] {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  let files: string[] = [];
+  for (const entry of fs.readdirSync(dirPath)) {
+    const fullPath = path.join(dirPath, entry);
+    if (entry === "node_modules" || entry === ".next" || entry === ".git" || entry === "api") {
+      continue;
+    }
+    if (fs.statSync(fullPath).isDirectory()) {
+      files = files.concat(scanSourceFiles(fullPath));
+    } else if (entry.endsWith(".tsx") || entry.endsWith(".ts")) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+test("前端组件中所有调用的翻译键必须在词典中已定义", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const appDir = path.resolve(__dirname, "../app");
+  const files = scanSourceFiles(appDir);
+  const definedZhKeys = new Set(getLeafKeys(translations.zh as unknown as Record<string, unknown>));
+  const missingKeys: Array<{ file: string; key: string }> = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, "utf8");
+    const regex = /\bt\(\s*["']([^"']+)["']/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      const key = match[1];
+      if (key.startsWith("nav.") && key.includes("${")) continue;
+      if (!definedZhKeys.has(key)) {
+        missingKeys.push({ file: path.relative(appDir, file), key });
+      }
+    }
+  }
+
+  assert.deepEqual(
+    missingKeys,
+    [],
+    `前端组件存在未在 translations.ts 中定义的翻译键: ${JSON.stringify(missingKeys, null, 2)}`,
+  );
+});
+

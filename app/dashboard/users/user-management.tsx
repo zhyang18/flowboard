@@ -169,7 +169,8 @@ export default function UserManagement({
   currentUserId: string;
   currentUserRole: UserRole;
 }) {
-  const { t, locale, getRoleLabel, getUserStatusLabel } = useTranslation();
+  const { t, locale, getRoleLabel, getUserStatusLabel, getPermissionLabel } =
+    useTranslation();
   const { confirm } = useDashboardDialog();
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -1142,7 +1143,7 @@ export default function UserManagement({
                 </header>
                 <div className="role-card-body">
                   <div className="role-title-row">
-                    <h3>{role.name}</h3>
+                    <h3>{role.isSystem ? getRoleLabel(role.id) : role.name}</h3>
                     {role.isSystem && (
                       <span className="system-role-tag">
                         {t("users.roles.systemPreset")}
@@ -1199,14 +1200,16 @@ export default function UserManagement({
                   <tr>
                     <th>{t("users.roles.featurePermission")}</th>
                     {roles.map((role) => (
-                      <th key={role.id}>{role.name}</th>
+                      <th key={role.id}>
+                        {role.isSystem ? getRoleLabel(role.id) : role.name}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {permissionRows.map((permission, rowIndex) => (
                     <tr key={permission}>
-                      <td>{permission}</td>
+                      <td>{getPermissionLabel(permission)}</td>
                       {roles.map((role) => {
                         const hasPermission = Boolean(
                           role.permissions[rowIndex],
@@ -1537,7 +1540,7 @@ export default function UserManagement({
                         checked={Boolean(roleForm.permissions[idx])}
                         onChange={() => toggleRolePermission(idx)}
                       />
-                      <span>{perm}</span>
+                      <span>{getPermissionLabel(perm)}</span>
                     </label>
                   ))}
                 </div>

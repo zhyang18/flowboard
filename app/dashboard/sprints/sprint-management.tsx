@@ -632,15 +632,15 @@ export default function SprintManagement() {
                   </div>
                   <div className="sprint-hours">
                     <span>
-                      <small>{t("sprints.capacityHours", { capacity: "" }).replace(/[\d\s]/g, "")}</small>
+                      <small>{t("sprints.capacityLabel")}</small>
                       <b>{sprint.capacityHours.toFixed(1)}h</b>
                     </span>
                     <span>
-                      <small>{t("sprints.estimateHours", { hours: "" }).replace(/[\d\s]/g, "")}</small>
+                      <small>{t("sprints.estimateLabel")}</small>
                       <b>{sprint.estimateHours.toFixed(1)}h</b>
                     </span>
                     <span>
-                      <small>{t("sprints.actualHours", { hours: "" }).replace(/[\d\s]/g, "")}</small>
+                      <small>{t("sprints.actualLabel")}</small>
                       <b>{sprint.actualHours.toFixed(1)}h</b>
                     </span>
                   </div>
@@ -728,7 +728,7 @@ export default function SprintManagement() {
                 <tr>
                   <th>{t("sprints.nameLabel")}</th>
                   <th>{t("common.status")}</th>
-                  <th>{t("sprints.startDate", { defaultValue: "周期" })}</th>
+                  <th>{t("sprints.cycleLabel")}</th>
                   <th>{t("common.progress")}</th>
                   <th>{t("sprints.capacityLabel")}</th>
                   <th>{t("common.hours")}</th>
@@ -774,7 +774,7 @@ export default function SprintManagement() {
                             <CalendarRange size={12} />{" "}
                             {displayDate(sprint.startDate, locale)}
                           </span>
-                          <small>至 {displayDate(sprint.endDate, locale)}</small>
+                          <small>{t("common.to")} {displayDate(sprint.endDate, locale)}</small>
                         </div>
                       </td>
                       <td>
