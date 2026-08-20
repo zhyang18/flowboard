@@ -18,25 +18,36 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { CurrentUser } from "@/lib/session";
-import { roleLabels } from "@/lib/users";
+import { useTranslation } from "@/lib/i18n";
 import LogoutButton from "./logout-button";
 
-const navigation = [
-  { label: "工作台", icon: LayoutDashboard, href: "/dashboard/workbench" },
-  { label: "项目", icon: FolderKanban, href: "/dashboard/projects" },
-  { label: "迭代", icon: TimerReset, href: "/dashboard/sprints" },
-  { label: "任务看板", icon: ListChecks, href: "/dashboard/board" },
-  { label: "工时分析", icon: Gauge, href: "/dashboard/time" },
-  { label: "报表", icon: BarChart3, href: "/dashboard/reports" },
-  { label: "用户管理", icon: Users, href: "/dashboard/users" },
-  { label: "设置", icon: Settings, href: "/dashboard/settings" },
+type NavItemKey =
+  | "workbench"
+  | "projects"
+  | "sprints"
+  | "board"
+  | "time"
+  | "reports"
+  | "users"
+  | "settings";
+
+const navigation: { key: NavItemKey; icon: typeof LayoutDashboard; href: string }[] = [
+  { key: "workbench", icon: LayoutDashboard, href: "/dashboard/workbench" },
+  { key: "projects", icon: FolderKanban, href: "/dashboard/projects" },
+  { key: "sprints", icon: TimerReset, href: "/dashboard/sprints" },
+  { key: "board", icon: ListChecks, href: "/dashboard/board" },
+  { key: "time", icon: Gauge, href: "/dashboard/time" },
+  { key: "reports", icon: BarChart3, href: "/dashboard/reports" },
+  { key: "users", icon: Users, href: "/dashboard/users" },
+  { key: "settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
 /**
- * 渲染按角色过滤的桌面侧边导航。
+ * 渲染按角色过滤并支持中英文国际化的桌面侧边导航栏。
  *
- * @param user 当前登录用户。
- * @param workspaceName 当前工作空间名称。
+ * @param props 组件属性。
+ * @param props.user 当前登录用户。
+ * @param props.workspaceName 当前工作空间名称。
  * @return 桌面侧边栏组件。
  */
 export default function DashboardSidebar({
@@ -48,6 +59,7 @@ export default function DashboardSidebar({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { t, getRoleLabel } = useTranslation();
 
   return (
     <aside className={`dashboard-sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -60,83 +72,93 @@ export default function DashboardSidebar({
         </span>
         <span className="sidebar-brand-copy">
           <b>FlowBoard</b>
-          <small>研发效能平台</small>
+          <small>{t("nav.brandSubtitle")}</small>
         </span>
       </div>
 
       <div className="workspace-chip">
-        <span><Blocks size={17} /></span>
+        <span>
+          <Blocks size={17} />
+        </span>
         <div>
-          <small>当前工作空间</small>
+          <small>{t("nav.currentWorkspace")}</small>
           <b>{workspaceName}</b>
         </div>
       </div>
 
-      <nav className="sidebar-navigation" aria-label="主导航">
-        <span className="nav-section-label">工作空间</span>
-        {navigation.slice(0, 6).map((item) => (
-          item.href ? (
+      <nav className="sidebar-navigation" aria-label={t("nav.workspaceSection")}>
+        <span className="nav-section-label">{t("nav.workspaceSection")}</span>
+        {navigation.slice(0, 6).map((item) => {
+          const label = t(`nav.${item.key}`);
+          return item.href ? (
             <Link
               className={pathname.startsWith(item.href) ? "active" : ""}
               href={item.href}
-              key={item.label}
-              title={item.label}
+              key={item.key}
+              title={label}
             >
               <item.icon size={18} />
-              <span>{item.label}</span>
+              <span>{label}</span>
               {pathname.startsWith(item.href) && <i />}
             </Link>
           ) : (
-            <button key={item.label} type="button" disabled title="后续模块">
+            <button key={item.key} type="button" disabled title={label}>
               <item.icon size={18} />
-              <span>{item.label}</span>
+              <span>{label}</span>
             </button>
+          );
+        })}
+        <span className="nav-section-label manage-label">
+          {t("nav.orgSection")}
+        </span>
+        {navigation
+          .slice(6)
+          .filter(
+            (item) =>
+              item.href !== "/dashboard/users" ||
+              user.role === "super_admin" ||
+              user.role === "project_admin",
           )
-        ))}
-        <span className="nav-section-label manage-label">组织管理</span>
-        {navigation.slice(6).filter((item) =>
-          item.href !== "/dashboard/users" ||
-          user.role === "super_admin" ||
-          user.role === "project_admin",
-        ).map((item) => (
-          item.href ? (
-            <Link
-              className={pathname.startsWith(item.href) ? "active" : ""}
-              href={item.href}
-              key={item.label}
-              title={item.label}
-            >
-              <item.icon size={18} />
-              <span>{item.label}</span>
-              {pathname.startsWith(item.href) && <i />}
-            </Link>
-          ) : (
-            <button key={item.label} type="button" disabled title="后续模块">
-              <item.icon size={18} />
-              <span>{item.label}</span>
-            </button>
-          )
-        ))}
+          .map((item) => {
+            const label = t(`nav.${item.key}`);
+            return item.href ? (
+              <Link
+                className={pathname.startsWith(item.href) ? "active" : ""}
+                href={item.href}
+                key={item.key}
+                title={label}
+              >
+                <item.icon size={18} />
+                <span>{label}</span>
+                {pathname.startsWith(item.href) && <i />}
+              </Link>
+            ) : (
+              <button key={item.key} type="button" disabled title={label}>
+                <item.icon size={18} />
+                <span>{label}</span>
+              </button>
+            );
+          })}
       </nav>
 
       <div className="sidebar-bottom">
         <button
           className="collapse-button"
           type="button"
-          aria-label={collapsed ? "展开导航" : "收起导航"}
+          aria-label={collapsed ? t("nav.expandNav") : t("nav.collapseNav")}
           aria-pressed={collapsed}
-          title={collapsed ? "展开导航" : "收起导航"}
+          title={collapsed ? t("nav.expandNav") : t("nav.collapseNav")}
           onClick={() => setCollapsed((value) => !value)}
         >
           {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
-          <span>{collapsed ? "展开导航" : "收起导航"}</span>
+          <span>{collapsed ? t("nav.expandNav") : t("nav.collapseNav")}</span>
         </button>
         <div className="sidebar-account">
           <span className="avatar">{user.name.slice(0, 1)}</span>
           <div>
             <b>{user.name}</b>
             <small>
-              <Shield size={11} /> {roleLabels[user.role]}
+              <Shield size={11} /> {getRoleLabel(user.role)}
             </small>
           </div>
           <LogoutButton />

@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 type DialogTone = "default" | "danger";
 
@@ -61,14 +62,16 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
 }
 
 /**
- * 为仪表盘提供统一的确认和输入悬浮弹框。
+ * 为仪表盘提供统一且支持中英文国际化的确认和输入悬浮弹框。
  *
- * @param children 仪表盘页面内容。
+ * @param props 组件属性。
+ * @param props.children 仪表盘页面内容。
  * @return 包含共享弹框上下文的仪表盘内容。
  */
 export default function DashboardDialogProvider({
   children,
 }: DashboardDialogProviderProps) {
+  const { t } = useTranslation();
   const [request, setRequest] = useState<DialogRequest | null>(null);
   const [inputValue, setInputValue] = useState("");
   const resolverRef = useRef<((result: DialogResult) => void) | null>(null);
@@ -81,7 +84,6 @@ export default function DashboardDialogProvider({
    * 关闭当前悬浮弹框并把结果返回给调用方。
    *
    * @param result 用户确认、取消或输入的结果。
-   * @return 无返回值。
    */
   const finishDialog = useCallback((result: DialogResult) => {
     const resolve = resolverRef.current;
@@ -128,8 +130,6 @@ export default function DashboardDialogProvider({
 
   /**
    * 提交当前确认结果或文本输入值。
-   *
-   * @return 无返回值。
    */
   function submitDialog() {
     finishDialog(request?.kind === "prompt" ? inputValue : true);
@@ -149,7 +149,6 @@ export default function DashboardDialogProvider({
      * 支持 Escape 取消和 Tab 焦点循环。
      *
      * @param event 浏览器键盘事件。
-     * @return 无返回值。
      */
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -218,14 +217,16 @@ export default function DashboardDialogProvider({
               </span>
               <div>
                 <span className="eyebrow">
-                  {request.tone === "danger" ? "请谨慎确认" : "操作确认"}
+                  {request.tone === "danger"
+                    ? t("dialog.caution")
+                    : t("dialog.confirmTitle")}
                 </span>
                 <h2 id="dashboard-dialog-title">{request.title}</h2>
               </div>
               <button
                 className="dashboard-dialog-close"
                 type="button"
-                aria-label="关闭弹框"
+                aria-label={t("dialog.close")}
                 onClick={() => finishDialog(null)}
               >
                 <X size={18} />
@@ -252,13 +253,17 @@ export default function DashboardDialogProvider({
                 type="button"
                 onClick={() => finishDialog(null)}
               >
-                {request.cancelLabel ?? "取消"}
+                {request.cancelLabel ?? t("dialog.defaultCancel")}
               </button>
               <button
-                className={request.tone === "danger" ? "dialog-danger-action" : "primary-action"}
+                className={
+                  request.tone === "danger"
+                    ? "dialog-danger-action"
+                    : "primary-action"
+                }
                 type="submit"
               >
-                {request.confirmLabel ?? "确认"}
+                {request.confirmLabel ?? t("dialog.defaultConfirm")}
               </button>
             </footer>
           </form>

@@ -37,6 +37,14 @@ export const metadata: Metadata = {
   },
 };
 
+import { LanguageProvider } from "@/lib/i18n";
+
+/**
+ * 根布局组件，注入全局样式与多语言上下文。
+ *
+ * @param props 组件入参，包含子节点 children。
+ * @return 根 HTML 布局。
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -44,7 +52,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
     </html>
   );
 }

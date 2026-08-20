@@ -17,6 +17,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { SUPPORTED_LOCALES, useTranslation, type Locale } from "@/lib/i18n";
 
 type SettingsForm = {
   workspaceName: string;
@@ -49,9 +50,10 @@ const defaultForm: SettingsForm = {
 /**
  * 渲染设置项的布尔开关。
  *
- * @param checked 当前是否开启。
- * @param disabled 当前是否禁止操作。
- * @param onChange 开关状态变化时的回调。
+ * @param props 开关组件属性。
+ * @param props.checked 当前是否开启。
+ * @param props.disabled 当前是否禁止操作。
+ * @param props.onChange 开关状态变化时的回调。
  * @return 可访问的开关按钮。
  */
 function Toggle({
@@ -78,12 +80,13 @@ function Toggle({
 }
 
 /**
- * 渲染工作空间设置与服务状态面板。
+ * 渲染工作空间设置与服务状态面板，包含界面中英文切换、时区、工时规则与交付提醒配置。
  *
  * @return 工作空间设置页面内容。
  */
 export default function SettingsPanel() {
   const router = useRouter();
+  const { t, locale, setLocale } = useTranslation();
   const [form, setForm] = useState(defaultForm);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -109,17 +112,17 @@ export default function SettingsPanel() {
         databaseCapacity?: DatabaseCapacity;
         error?: string;
       };
-      if (!response.ok) throw new Error(result.error ?? "设置加载失败。");
+      if (!response.ok) throw new Error(result.error ?? t("settings.loadError"));
       setForm(result.data ?? defaultForm);
       setCanManage(Boolean(result.canManage));
       setDatabaseCapacity(result.databaseCapacity ?? null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "设置加载失败。");
+      setError(loadError instanceof Error ? loadError.message : t("settings.loadError"));
       setDatabaseCapacity(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSettings(), 0);
@@ -149,11 +152,11 @@ export default function SettingsPanel() {
         body: JSON.stringify(form),
       });
       const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "设置保存失败。");
-      setNotice("工作空间设置已保存");
+      if (!response.ok) throw new Error(result.error ?? t("settings.saveError"));
+      setNotice(t("settings.saveSuccess"));
       router.refresh();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "设置保存失败。");
+      setError(saveError instanceof Error ? saveError.message : t("settings.saveError"));
     } finally {
       setSaving(false);
     }
@@ -163,58 +166,255 @@ export default function SettingsPanel() {
     <div className="module-page settings-page">
       <section className="module-heading">
         <div>
-          <span className="eyebrow">工作空间配置</span>
-          <h2>让团队按统一规则协作</h2>
-          <p>维护工作空间信息、工时规则、任务行为和提醒偏好。</p>
+          <span className="eyebrow">{t("settings.eyebrow")}</span>
+          <h2>{t("settings.heading")}</h2>
+          <p>{t("settings.description")}</p>
         </div>
       </section>
 
       {error && <div className="module-alert">{error}</div>}
-      {!canManage && !loading && <div className="settings-readonly"><ShieldCheck size={16} /> 当前账号为只读模式，仅管理员可以修改工作空间设置。</div>}
+      {!canManage && !loading && (
+        <div className="settings-readonly">
+          <ShieldCheck size={16} /> {t("settings.readonlyNotice")}
+        </div>
+      )}
 
       <form className="settings-layout" onSubmit={saveSettings}>
         <div className="settings-main">
           <section className="module-card settings-section">
-            <header><span className="settings-section-icon blue"><Globe2 size={18} /></span><div><h3>基本信息</h3><p>用于导航、日期和团队工作节奏。</p></div></header>
+            <header>
+              <span className="settings-section-icon blue">
+                <Globe2 size={18} />
+              </span>
+              <div>
+                <h3>{t("settings.basicInfo")}</h3>
+                <p>{t("settings.basicInfoDesc")}</p>
+              </div>
+            </header>
             <div className="settings-fields">
-              <label className="field-wide"><span>工作空间名称</span><input disabled={!canManage} value={form.workspaceName} onChange={(event) => setForm({ ...form, workspaceName: event.target.value })} /></label>
-              <label><span>默认时区</span><select disabled={!canManage} value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}><option value="Asia/Singapore">Asia/Singapore（UTC+8）</option><option value="Asia/Shanghai">Asia/Shanghai（UTC+8）</option><option value="Asia/Tokyo">Asia/Tokyo（UTC+9）</option><option value="UTC">UTC</option></select></label>
-              <label><span>每周起始日</span><select disabled={!canManage} value={form.weekStart} onChange={(event) => setForm({ ...form, weekStart: Number(event.target.value) })}><option value={1}>星期一</option><option value={0}>星期日</option></select></label>
+              <label className="field-wide">
+                <span>{t("settings.workspaceName")}</span>
+                <input
+                  disabled={!canManage}
+                  value={form.workspaceName}
+                  onChange={(event) =>
+                    setForm({ ...form, workspaceName: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>{t("settings.language")}</span>
+                <select
+                  value={locale}
+                  onChange={(event) => setLocale(event.target.value as Locale)}
+                >
+                  {SUPPORTED_LOCALES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>{t("settings.timezone")}</span>
+                <select
+                  disabled={!canManage}
+                  value={form.timezone}
+                  onChange={(event) =>
+                    setForm({ ...form, timezone: event.target.value })
+                  }
+                >
+                  <option value="Asia/Singapore">Asia/Singapore（UTC+8）</option>
+                  <option value="Asia/Shanghai">Asia/Shanghai（UTC+8）</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo（UTC+9）</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </label>
+              <label>
+                <span>{t("settings.weekStart")}</span>
+                <select
+                  disabled={!canManage}
+                  value={form.weekStart}
+                  onChange={(event) =>
+                    setForm({ ...form, weekStart: Number(event.target.value) })
+                  }
+                >
+                  <option value={1}>{t("settings.monday")}</option>
+                  <option value={0}>{t("settings.sunday")}</option>
+                </select>
+              </label>
             </div>
           </section>
 
           <section className="module-card settings-section">
-            <header><span className="settings-section-icon violet"><Clock3 size={18} /></span><div><h3>工时规则</h3><p>定义任务预估和团队容量的默认口径。</p></div></header>
+            <header>
+              <span className="settings-section-icon violet">
+                <Clock3 size={18} />
+              </span>
+              <div>
+                <h3>{t("settings.workRules")}</h3>
+                <p>{t("settings.workRulesDesc")}</p>
+              </div>
+            </header>
             <div className="settings-fields">
-              <label><span>默认任务预估</span><div className="number-suffix"><input disabled={!canManage} type="number" min="0.5" step="0.5" value={form.defaultEstimateHours} onChange={(event) => setForm({ ...form, defaultEstimateHours: Number(event.target.value) })} /><i>小时</i></div></label>
-              <label><span>标准工作日</span><div className="number-suffix"><input disabled={!canManage} type="number" min="1" max="24" step="0.5" value={form.workdayHours} onChange={(event) => setForm({ ...form, workdayHours: Number(event.target.value) })} /><i>小时</i></div></label>
-              <div className="settings-rule field-wide"><div><b>任务必须填写预估工时</b><p>创建任务时要求提供明确的时间预估。</p></div><Toggle checked={form.requireEstimate} disabled={!canManage} onChange={(value) => setForm({ ...form, requireEstimate: value })} /></div>
+              <label>
+                <span>{t("settings.defaultEstimate")}</span>
+                <div className="number-suffix">
+                  <input
+                    disabled={!canManage}
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={form.defaultEstimateHours}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        defaultEstimateHours: Number(event.target.value),
+                      })
+                    }
+                  />
+                  <i>{t("common.hours")}</i>
+                </div>
+              </label>
+              <label>
+                <span>{t("settings.standardWorkday")}</span>
+                <div className="number-suffix">
+                  <input
+                    disabled={!canManage}
+                    type="number"
+                    min="1"
+                    max="24"
+                    step="0.5"
+                    value={form.workdayHours}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        workdayHours: Number(event.target.value),
+                      })
+                    }
+                  />
+                  <i>{t("common.hours")}</i>
+                </div>
+              </label>
+              <div className="settings-rule field-wide">
+                <div>
+                  <b>{t("settings.requireEstimateTitle")}</b>
+                  <p>{t("settings.requireEstimateDesc")}</p>
+                </div>
+                <Toggle
+                  checked={form.requireEstimate}
+                  disabled={!canManage}
+                  onChange={(value) =>
+                    setForm({ ...form, requireEstimate: value })
+                  }
+                />
+              </div>
             </div>
           </section>
 
           <section className="module-card settings-section">
-            <header><span className="settings-section-icon green"><Settings2 size={18} /></span><div><h3>任务与提醒</h3><p>控制完成时间记录和交付风险提醒。</p></div></header>
+            <header>
+              <span className="settings-section-icon green">
+                <Settings2 size={18} />
+              </span>
+              <div>
+                <h3>{t("settings.tasksAndAlerts")}</h3>
+                <p>{t("settings.tasksAndAlertsDesc")}</p>
+              </div>
+            </header>
             <div className="settings-rules">
-              <div className="settings-rule"><div><b>自动记录实际完成时间</b><p>任务移动至“已完成”时自动保存完成时间。</p></div><Toggle checked={form.autoCompleteTimestamp} disabled={!canManage} onChange={(value) => setForm({ ...form, autoCompleteTimestamp: value })} /></div>
-              <div className="settings-rule"><div><b>逾期任务提醒</b><p>任务超过截止日期后在工作台和报表中突出显示。</p></div><Toggle checked={form.notifyOverdue} disabled={!canManage} onChange={(value) => setForm({ ...form, notifyOverdue: value })} /></div>
+              <div className="settings-rule">
+                <div>
+                  <b>{t("settings.autoCompleteTitle")}</b>
+                  <p>{t("settings.autoCompleteDesc")}</p>
+                </div>
+                <Toggle
+                  checked={form.autoCompleteTimestamp}
+                  disabled={!canManage}
+                  onChange={(value) =>
+                    setForm({ ...form, autoCompleteTimestamp: value })
+                  }
+                />
+              </div>
+              <div className="settings-rule">
+                <div>
+                  <b>{t("settings.notifyOverdueTitle")}</b>
+                  <p>{t("settings.notifyOverdueDesc")}</p>
+                </div>
+                <Toggle
+                  checked={form.notifyOverdue}
+                  disabled={!canManage}
+                  onChange={(value) =>
+                    setForm({ ...form, notifyOverdue: value })
+                  }
+                />
+              </div>
             </div>
           </section>
         </div>
 
         <aside className="settings-side">
           <section className="module-card settings-status-card">
-            <span className="settings-section-icon green"><Database size={19} /></span>
-            <div><small>数据持久化</small><b>PostgreSQL 已连接</b><p>项目、任务、迭代、工时和设置均保存在服务端数据库。</p></div>
-            <span className="settings-health"><i /> 运行正常 <span className="settings-database-size" title={databaseCapacity ? `Neon Free 总容量 ${databaseCapacity.total}` : undefined}>{databaseCapacity ? `数据库已用 ${databaseCapacity.used} / 剩余 ${databaseCapacity.remaining}` : loading ? "数据库容量获取中…" : "数据库容量暂不可用"}</span></span>
+            <span className="settings-section-icon green">
+              <Database size={19} />
+            </span>
+            <div>
+              <small>{t("settings.dataPersistence")}</small>
+              <b>{t("settings.dbConnected")}</b>
+              <p>{t("settings.dbDesc")}</p>
+            </div>
+            <span className="settings-health">
+              <i /> {t("settings.runningNormal")}{" "}
+              <span
+                className="settings-database-size"
+                title={
+                  databaseCapacity
+                    ? `Neon Free ${databaseCapacity.total}`
+                    : undefined
+                }
+              >
+                {databaseCapacity
+                  ? t("settings.dbCapacityUsed", {
+                      used: databaseCapacity.used,
+                      remaining: databaseCapacity.remaining,
+                    })
+                  : loading
+                    ? t("settings.dbCapacityLoading")
+                    : t("settings.dbCapacityUnavailable")}
+              </span>
+            </span>
           </section>
           <section className="module-card settings-status-card">
-            <span className="settings-section-icon blue"><BellRing size={19} /></span>
-            <div><small>当前提醒策略</small><b>{form.notifyOverdue ? "逾期风险已开启" : "逾期风险已关闭"}</b><p>工作台与报表使用同一套任务交付规则。</p></div>
+            <span className="settings-section-icon blue">
+              <BellRing size={19} />
+            </span>
+            <div>
+              <small>{t("settings.currentAlertPolicy")}</small>
+              <b>
+                {form.notifyOverdue
+                  ? t("settings.overdueAlertsEnabled")
+                  : t("settings.overdueAlertsDisabled")}
+              </b>
+              <p>{t("settings.alertPolicyDesc")}</p>
+            </div>
           </section>
-          {canManage && <button className="settings-save-button" type="submit" disabled={saving || loading}><Save size={16} /> {saving ? "保存中…" : "保存全部设置"}</button>}
+          {canManage && (
+            <button
+              className="settings-save-button"
+              type="submit"
+              disabled={saving || loading}
+            >
+              <Save size={16} />{" "}
+              {saving ? t("settings.savingButton") : t("settings.saveButton")}
+            </button>
+          )}
         </aside>
       </form>
-      {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
+      {notice && (
+        <div className="toast">
+          <CheckCircle2 size={16} /> {notice}
+        </div>
+      )}
     </div>
   );
 }

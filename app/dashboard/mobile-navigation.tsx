@@ -13,26 +13,48 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { UserRole } from "@/db/schema";
+import { useTranslation } from "@/lib/i18n";
 
-const items = [
-  { label: "工作台", href: "/dashboard/workbench", icon: LayoutDashboard },
-  { label: "项目", href: "/dashboard/projects", icon: FolderKanban },
-  { label: "迭代", href: "/dashboard/sprints", icon: TimerReset },
-  { label: "看板", href: "/dashboard/board", icon: ListChecks },
-  { label: "工时", href: "/dashboard/time", icon: Gauge },
-  { label: "报表", href: "/dashboard/reports", icon: BarChart3 },
-  { label: "用户", href: "/dashboard/users", icon: Users },
-  { label: "设置", href: "/dashboard/settings", icon: Settings },
+type MobileNavItemKey =
+  | "workbench"
+  | "projects"
+  | "sprints"
+  | "board"
+  | "time"
+  | "reports"
+  | "users"
+  | "settings";
+
+const items: {
+  key: MobileNavItemKey;
+  href: string;
+  icon: typeof LayoutDashboard;
+}[] = [
+  { key: "workbench", href: "/dashboard/workbench", icon: LayoutDashboard },
+  { key: "projects", href: "/dashboard/projects", icon: FolderKanban },
+  { key: "sprints", href: "/dashboard/sprints", icon: TimerReset },
+  { key: "board", href: "/dashboard/board", icon: ListChecks },
+  { key: "time", href: "/dashboard/time", icon: Gauge },
+  { key: "reports", href: "/dashboard/reports", icon: BarChart3 },
+  { key: "users", href: "/dashboard/users", icon: Users },
+  { key: "settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 /**
- * 渲染按角色过滤的移动端底部导航。
+ * 渲染按角色过滤并支持中英文国际化的移动端底部导航。
  *
- * @param userRole 当前登录用户角色。
+ * @param props 组件属性。
+ * @param props.userRole 当前登录用户的全局角色。
  * @return 移动端导航组件。
  */
-export default function MobileNavigation({ userRole }: { userRole: UserRole }) {
+export default function MobileNavigation({
+  userRole,
+}: {
+  userRole: UserRole;
+}) {
   const pathname = usePathname();
+  const { t } = useTranslation();
+
   const visibleItems = items.filter(
     (item) =>
       item.href !== "/dashboard/users" ||
@@ -41,7 +63,7 @@ export default function MobileNavigation({ userRole }: { userRole: UserRole }) {
   );
 
   return (
-    <nav className="mobile-navigation" aria-label="移动端主导航">
+    <nav className="mobile-navigation" aria-label={t("nav.workspaceSection")}>
       {visibleItems.map((item) => (
         <Link
           className={pathname.startsWith(item.href) ? "active" : ""}
@@ -49,7 +71,7 @@ export default function MobileNavigation({ userRole }: { userRole: UserRole }) {
           key={item.href}
         >
           <item.icon size={18} />
-          <span>{item.label}</span>
+          <span>{t(`nav.${item.key}`)}</span>
         </Link>
       ))}
     </nav>

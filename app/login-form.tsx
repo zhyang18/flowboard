@@ -4,18 +4,20 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "@/lib/i18n";
 
 const showDemoCredentials = process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true";
 const demoEmail = process.env.NEXT_PUBLIC_DEMO_EMAIL ?? "admin@flowboard.local";
 const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? "Admin@123456";
 
 /**
- * 渲染登录表单并管理登录请求状态。
+ * 渲染支持中英文国际化的登录表单并管理登录请求状态。
  *
  * @return 登录表单组件。
  */
 export default function LoginForm() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [email, setEmail] = useState(showDemoCredentials ? demoEmail : "");
   const [password, setPassword] = useState(showDemoCredentials ? demoPassword : "");
   const [showPassword, setShowPassword] = useState(false);
@@ -42,19 +44,19 @@ export default function LoginForm() {
       });
       const result = (await response
         .json()
-        .catch(() => ({ error: "登录服务异常，请稍后重试。" }))) as {
+        .catch(() => ({ error: t("login.serviceError") }))) as {
         error?: string;
       };
 
       if (!response.ok || result.error) {
-        setError(result.error ?? "登录失败，请稍后再试。");
+        setError(result.error ?? t("login.loginFailed"));
         return;
       }
 
       router.push("/dashboard/workbench");
       router.refresh();
     } catch {
-      setError("网络连接异常，请检查后重试。");
+      setError(t("login.networkError"));
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +72,7 @@ export default function LoginForm() {
       )}
 
       <label className="form-field">
-        <span>邮箱地址</span>
+        <span>{t("login.emailLabel")}</span>
         <div className="input-shell">
           <Mail size={18} aria-hidden="true" />
           <input
@@ -86,7 +88,7 @@ export default function LoginForm() {
       </label>
 
       <label className="form-field">
-        <span>登录密码</span>
+        <span>{t("login.passwordLabel")}</span>
         <div className="input-shell">
           <LockKeyhole size={18} aria-hidden="true" />
           <input
@@ -94,13 +96,17 @@ export default function LoginForm() {
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="请输入登录密码"
+            placeholder={t("login.passwordPlaceholder")}
             required
           />
           <button
             type="button"
             className="password-toggle"
-            aria-label={showPassword ? "隐藏密码" : "显示密码"}
+            aria-label={
+              showPassword
+                ? t("login.hidePassword")
+                : t("login.showPassword")
+            }
             onClick={() => setShowPassword((value) => !value)}
           >
             {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -115,22 +121,29 @@ export default function LoginForm() {
             checked={remember}
             onChange={(event) => setRemember(event.target.checked)}
           />
-          <span>保持登录状态</span>
+          <span>{t("login.rememberMe")}</span>
         </label>
-        <button type="button" onClick={() => setError("请联系组织管理员重置密码。")}>
-          忘记密码？
+        <button
+          type="button"
+          onClick={() => setError(t("login.forgotPasswordHint"))}
+        >
+          {t("login.forgotPassword")}
         </button>
       </div>
 
       <button className="login-submit" type="submit" disabled={submitting}>
-        <span>{submitting ? "正在登录…" : "登录"}</span>
+        <span>
+          {submitting ? t("login.loggingIn") : t("login.loginButton")}
+        </span>
         {!submitting && <ArrowRight size={18} />}
       </button>
 
       {showDemoCredentials && (
         <div className="demo-account">
-          <span>演示账号</span>
-          <p>{demoEmail}　/　{demoPassword}</p>
+          <span>{t("login.demoAccount")}</span>
+          <p>
+            {demoEmail}　/　{demoPassword}
+          </p>
         </div>
       )}
     </form>
